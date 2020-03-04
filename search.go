@@ -48,7 +48,10 @@ func indexingFolder(path string) {
 	}
 
 	output, err := json.Marshal(index)
-	if err := ioutil.WriteFile("output.json", output, 0); err != nil {
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err := ioutil.WriteFile("index.json", output, 0); err != nil {
 		log.Fatal(err)
 	}
 }
