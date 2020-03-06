@@ -9,12 +9,12 @@ import (
 )
 
 // IndexingFolder create a file with revrse index
-func IndexingFolder(path string) {
+func indexingFolder(path string) {
 	files, err := ioutil.ReadDir(path)
 	if err != nil {
 		log.Fatal(err)
 	}
-	index := make(IndexReverse)
+	index := make(indexReverse)
 
 	for _, f := range files {
 		file, err := ioutil.ReadFile(path + "\\" + f.Name())

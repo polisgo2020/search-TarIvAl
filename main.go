@@ -7,7 +7,7 @@ import (
 )
 
 // IndexReverse is type for storage reverse index in program
-type IndexReverse map[string][]string
+type indexReverse map[string][]string
 
 func main() {
 	var path string
@@ -17,5 +17,7 @@ func main() {
 		path = os.Args[1]
 	}
 
-	IndexingFolder(path)
+	// indexingFolder(path)
+
+	searching(path)
 }
