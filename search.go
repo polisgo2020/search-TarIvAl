@@ -31,7 +31,7 @@ func indexingFolder(path string) {
 	index := make(indexReverse)
 
 	for _, f := range files {
-		file, err := ioutil.ReadFile(path + "\\" + f.Name())
+		file, err := ioutil.ReadFile(path + string(os.PathSeparator) + f.Name())
 		if err != nil {
 			log.Fatal(err)
 		}
