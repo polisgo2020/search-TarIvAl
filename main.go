@@ -4,10 +4,9 @@ import (
 	"errors"
 	"log"
 	"os"
+	"github.com/polisgo2020/search-tarival/index"
+	"github.com/polisgo2020/search-tarival/search"
 )
-
-// IndexReverse is type for storage reverse index in program
-type indexReverse map[string][]string
 
 func main() {
 	var path string
@@ -17,7 +16,6 @@ func main() {
 		path = os.Args[1]
 	}
 
-	// indexingFolder(path)
-
-	searching(path)
+	IndexingFolder(path)
+	Searching()
 }

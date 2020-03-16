@@ -1,4 +1,4 @@
-package main
+package index
 
 import (
 	"encoding/json"
@@ -7,14 +7,16 @@ import (
 	"strings"
 	"unicode"
 )
+// IndexReverse is type for storage reverse index in program
+type IndexReverse map[string][]string
 
 // IndexingFolder create a file with revrse index
-func indexingFolder(path string) {
+func IndexingFolder(path string) {
 	files, err := ioutil.ReadDir(path)
 	if err != nil {
 		log.Fatal(err)
 	}
-	index := make(indexReverse)
+	index := make(IndexReverse)
 
 	for _, f := range files {
 		file, err := ioutil.ReadFile(path + "\\" + f.Name())

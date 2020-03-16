@@ -1,4 +1,4 @@
-package main
+package search
 
 import (
 	"encoding/json"
@@ -17,9 +17,20 @@ type searchResult struct {
 }
 
 // Searching is func for search with reverse index
-func searching(path string) {
+func Searching() {
+	fileStopWords, err := ioutil.ReadFile("stopwords.txt")
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	file, err := ioutil.ReadFile(path + "index.json")
+	stopWords := strings.Fields(string(fileStopWords))
+
+	mapStopWords := map[string]uint{}
+	for _, stopWord := range stopWords {
+		mapStopWords[stopWord]++
+	}
+
+	file, err := ioutil.ReadFile("index.json")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -41,6 +52,9 @@ func searching(path string) {
 	files := map[string]uint{}
 
 	for _, keyword := range keywords {
+		if _, ok := mapStopWords[keyword]; ok {
+			continue
+		}
 		if indexBit, ok := index[keyword]; ok {
 			for _, file := range indexBit {
 				files[file]++
