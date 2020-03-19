@@ -67,7 +67,8 @@ func addFileInIndex(file os.FileInfo, path string, mapStopWords map[string]bool,
 
 	words := strings.Fields(string(fileText))
 
-	for i, word := range words {
+	wordPosition := 0
+	for _, word := range words {
 		word = strings.TrimFunc(word, func(r rune) bool {
 			return !unicode.IsLetter(r) && !unicode.IsNumber(r)
 		})
@@ -79,15 +80,17 @@ func addFileInIndex(file os.FileInfo, path string, mapStopWords map[string]bool,
 
 		if sliceIndex, ok := index[word]; ok {
 			if j, ok := hasFileInIndex(sliceIndex, file.Name()); ok {
-				index[word][j].Positions = append(index[word][j].Positions, i)
+				index[word][j].Positions = append(index[word][j].Positions, wordPosition)
+				wordPosition++
 				continue
 			}
 		}
 
 		item := wordIndex{
 			File:      file.Name(),
-			Positions: []int{i},
+			Positions: []int{wordPosition},
 		}
 		index[word] = append(index[word], item)
+		wordPosition++
 	}
 }
