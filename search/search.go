@@ -3,7 +3,6 @@ package search
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io/ioutil"
 	"log"
 	"sort"
@@ -27,7 +26,7 @@ type wordOnFile struct {
 }
 
 // Searching is func for search with reverse index
-func Searching(indexFile, pathToStopWords string, sliceKeywords []string) {
+func Searching(indexFile, pathToStopWords string, sliceKeywords []string) []string {
 
 	file, err := ioutil.ReadFile(indexFile)
 	if err != nil {
@@ -78,38 +77,26 @@ func Searching(indexFile, pathToStopWords string, sliceKeywords []string) {
 	}
 
 	counterUniqueKeywords(results, keywords)
-	sortSlicePositions(results)
+	sortPositions(results)
 
 	for file, result := range results {
 		result.maxLengthPhrase = maxLengthKeyphrase(result.words, keywords)
 		results[file] = result
 	}
 
-	output := []searchResult{}
+	sliceResults := convertMapToSlice(results)
 
-	for file, result := range results {
-		output = append(output, searchResult{
-			file:            file,
-			count:           result.count,
-			uniqueKeywords:  result.uniqueKeywords,
-			maxLengthPhrase: result.maxLengthPhrase,
-		})
-	}
-
-	sort.Slice(output, func(i, j int) bool {
-		if output[i].maxLengthPhrase > output[j].maxLengthPhrase {
-			return true
-		}
-		if output[i].maxLengthPhrase == output[j].maxLengthPhrase && output[i].uniqueKeywords > output[j].uniqueKeywords {
-			return true
-		}
-		if output[i].maxLengthPhrase == output[j].maxLengthPhrase && output[i].uniqueKeywords == output[j].uniqueKeywords && output[i].count > output[j].count {
-			return true
-		}
-		return false
+	sort.Slice(sliceResults, func(i, j int) bool {
+		return sortSearchResults(sliceResults[i], sliceResults[j])
 	})
 
-	fmt.Println(output)
+	var searchResult []string
+
+	for _, result := range sliceResults {
+		searchResult = append(searchResult, result.file)
+	}
+
+	return searchResult
 }
 
 func createSliceKeywords(sliceKeywords []string, pathToStopWords string) []string {
@@ -141,7 +128,7 @@ func counterUniqueKeywords(results map[string]searchResult, keywords []string) {
 	}
 }
 
-func sortSlicePositions(results map[string]searchResult) {
+func sortPositions(results map[string]searchResult) {
 	for file, result := range results {
 		sort.Slice(result.words, func(i, j int) bool { return result.words[i].position < result.words[j].position })
 		results[file] = result
@@ -154,7 +141,7 @@ func maxLengthKeyphrase(words []wordOnFile, keywords []string) int {
 	maxLength := 1
 	prevPosition := words[0].position - 1
 	for _, wordData := range words {
-		if startKeywordPhrasePositon+length == len(keywords) {
+		if startKeywordPhrasePositon+length >= len(keywords) {
 			return maxLength
 		}
 		if wordData.word == keywords[startKeywordPhrasePositon+length] && wordData.position-1 == prevPosition {
@@ -178,4 +165,30 @@ func maxLengthKeyphrase(words []wordOnFile, keywords []string) int {
 		prevPosition = wordData.position
 	}
 	return maxLength
+}
+
+func sortSearchResults(i, j searchResult) bool {
+	if i.maxLengthPhrase > j.maxLengthPhrase {
+		return true
+	}
+	if i.maxLengthPhrase == j.maxLengthPhrase && i.uniqueKeywords > j.uniqueKeywords {
+		return true
+	}
+	if i.maxLengthPhrase == j.maxLengthPhrase && i.uniqueKeywords == j.uniqueKeywords && i.count > j.count {
+		return true
+	}
+	return false
+}
+
+func convertMapToSlice(mapResults map[string]searchResult) []searchResult {
+	sliceResults := []searchResult{}
+	for file, result := range mapResults {
+		sliceResults = append(sliceResults, searchResult{
+			file:            file,
+			count:           result.count,
+			uniqueKeywords:  result.uniqueKeywords,
+			maxLengthPhrase: result.maxLengthPhrase,
+		})
+	}
+	return sliceResults
 }
