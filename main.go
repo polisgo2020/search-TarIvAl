@@ -42,7 +42,16 @@ func main() {
 		if len(os.Args) < 3 {
 			log.Fatal(errors.New("Search phrase not found"))
 		}
-		search.Searching(indexName, pathToStopWords, os.Args[2:])
+		searchResult := search.Searching(indexName, pathToStopWords, os.Args[2:])
+		output := ""
+		for i, result := range searchResult {
+			output = fmt.Sprintf("%v%v) %v\n", output, i+1, result)
+		}
+
+		if err := ioutil.WriteFile("stdout.txt", []byte(output), 0); err != nil {
+			log.Fatal(err)
+		}
+
 	case "help":
 		fmt.Printf("Run:\n1) 'search-tarival index (path to folder for indexing)' for indexing folder\n2) 'search-tarival search (search phrase)' for search in folder with existing index")
 	default:
