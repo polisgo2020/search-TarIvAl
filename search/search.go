@@ -2,7 +2,7 @@ package search
 
 import (
 	"encoding/json"
-	"errors"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"sort"
@@ -26,34 +26,19 @@ type wordOnFile struct {
 }
 
 // Searching is func for search with reverse index
-func Searching(indexFile, pathToStopWords string, sliceKeywords []string) []string {
-
-	file, err := ioutil.ReadFile(indexFile)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	index := make(index.ReverseIndex)
-	if err := json.Unmarshal(file, &index); err != nil {
-		log.Fatal(err)
-	}
-
-	if len(sliceKeywords) == 0 {
-		log.Fatal(errors.New("Can't find keywords"))
-	}
-
-	keywords := createSliceKeywords(sliceKeywords, pathToStopWords)
+func Searching(pathToIndex, pathToStopWords string, searchPhrase []string) []string {
+	index := readIndex(pathToIndex)
+	keywords := convertPharaseToKeywords(searchPhrase, pathToStopWords)
 
 	results := map[string]searchResult{}
 
 	for _, keyword := range keywords {
-		if indexBit, ok := index[keyword]; ok {
-			for _, indexFile := range indexBit {
-
-				var result []wordOnFile
+		if keywordIndex, ok := index[keyword]; ok {
+			for _, indexFile := range keywordIndex {
+				var words []wordOnFile
 
 				for _, position := range indexFile.Positions {
-					result = append(result, wordOnFile{
+					words = append(words, wordOnFile{
 						word:     keyword,
 						position: position,
 					})
@@ -63,13 +48,13 @@ func Searching(indexFile, pathToStopWords string, sliceKeywords []string) []stri
 					results[indexFile.File] = searchResult{
 						count:          len(indexFile.Positions),
 						uniqueKeywords: 0,
-						words:          result,
+						words:          words,
 					}
 				} else {
-					Result := results[indexFile.File]
-					Result.words = append(Result.words, result...)
-					Result.count += len(indexFile.Positions)
-					results[indexFile.File] = Result
+					result := results[indexFile.File]
+					result.words = append(result.words, words...)
+					result.count += len(indexFile.Positions)
+					results[indexFile.File] = result
 
 				}
 			}
@@ -80,16 +65,13 @@ func Searching(indexFile, pathToStopWords string, sliceKeywords []string) []stri
 	sortPositions(results)
 
 	for file, result := range results {
-		result.maxLengthPhrase = maxLengthKeyphrase(result.words, keywords)
+		result.maxLengthPhrase = maxLengthSearchPhrase(result.words, keywords)
 		results[file] = result
 	}
 
-	sliceResults := convertMapToSlice(results)
+	sliceResults := sortSearchResults(convertMapToSlice(results))
 
-	sort.Slice(sliceResults, func(i, j int) bool {
-		return sortSearchResults(sliceResults[i], sliceResults[j])
-	})
-
+	fmt.Println(sliceResults)
 	var searchResult []string
 
 	for _, result := range sliceResults {
@@ -99,17 +81,17 @@ func Searching(indexFile, pathToStopWords string, sliceKeywords []string) []stri
 	return searchResult
 }
 
-func createSliceKeywords(sliceKeywords []string, pathToStopWords string) []string {
+func convertPharaseToKeywords(searchPhrase []string, pathToStopWords string) []string {
 	var keywords []string
 
 	mapStopWords := index.CreateStopWordsMap(pathToStopWords)
 
-	for _, keyword := range sliceKeywords {
+	for _, keyword := range searchPhrase {
 		keyword = english.Stem(keyword, false)
 		if _, ok := mapStopWords[keyword]; ok {
 			continue
 		}
-		keywords = append(keywords, strings.ToLower(keyword))
+		keywords = append(searchPhrase, strings.ToLower(keyword))
 	}
 	return keywords
 }
@@ -120,11 +102,11 @@ func counterUniqueKeywords(results map[string]searchResult, keywords []string) {
 			for _, Word := range result.words {
 				if Word.word == keyword {
 					result.uniqueKeywords++
-					results[i] = result
 					break
 				}
 			}
 		}
+		results[i] = result
 	}
 }
 
@@ -135,7 +117,7 @@ func sortPositions(results map[string]searchResult) {
 	}
 }
 
-func maxLengthKeyphrase(words []wordOnFile, keywords []string) int {
+func maxLengthSearchPhrase(words []wordOnFile, keywords []string) int {
 	startKeywordPhrasePositon := 0
 	length := 0
 	maxLength := 1
@@ -167,17 +149,20 @@ func maxLengthKeyphrase(words []wordOnFile, keywords []string) int {
 	return maxLength
 }
 
-func sortSearchResults(i, j searchResult) bool {
-	if i.maxLengthPhrase > j.maxLengthPhrase {
-		return true
-	}
-	if i.maxLengthPhrase == j.maxLengthPhrase && i.uniqueKeywords > j.uniqueKeywords {
-		return true
-	}
-	if i.maxLengthPhrase == j.maxLengthPhrase && i.uniqueKeywords == j.uniqueKeywords && i.count > j.count {
-		return true
-	}
-	return false
+func sortSearchResults(sliceResults []searchResult) []searchResult {
+	sort.Slice(sliceResults, func(i, j int) bool {
+		if sliceResults[i].maxLengthPhrase > sliceResults[j].maxLengthPhrase {
+			return true
+		}
+		if sliceResults[i].maxLengthPhrase == sliceResults[j].maxLengthPhrase && sliceResults[i].uniqueKeywords > sliceResults[j].uniqueKeywords {
+			return true
+		}
+		if sliceResults[i].maxLengthPhrase == sliceResults[j].maxLengthPhrase && sliceResults[i].uniqueKeywords == sliceResults[j].uniqueKeywords && sliceResults[i].count > sliceResults[j].count {
+			return true
+		}
+		return false
+	})
+	return sliceResults
 }
 
 func convertMapToSlice(mapResults map[string]searchResult) []searchResult {
@@ -191,4 +176,17 @@ func convertMapToSlice(mapResults map[string]searchResult) []searchResult {
 		})
 	}
 	return sliceResults
+}
+
+func readIndex(pathToIndex string) index.ReverseIndex {
+	file, err := ioutil.ReadFile(pathToIndex)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	index := make(index.ReverseIndex)
+	if err := json.Unmarshal(file, &index); err != nil {
+		log.Fatal(err)
+	}
+	return index
 }
