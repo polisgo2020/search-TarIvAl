@@ -1,6 +1,7 @@
 package index
 
 import (
+	"encoding/json"
 	"io/ioutil"
 	"log"
 	"os"
@@ -31,6 +32,20 @@ func CreateStopWordsMap(path string) map[string]bool {
 		mapStopWords[strings.ToLower(stopWord)] = true
 	}
 	return mapStopWords
+}
+
+// ReadIndex - read 'pathToIndex' file and return ReverseIndex
+func ReadIndex(pathToIndex string) (ReverseIndex, error) {
+	file, err := ioutil.ReadFile(pathToIndex)
+	if err != nil {
+		return nil, err
+	}
+
+	index := make(ReverseIndex)
+	if err := json.Unmarshal(file, &index); err != nil {
+		return nil, err
+	}
+	return index, nil
 }
 
 // IndexingFolder create a file with revrse index

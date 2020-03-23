@@ -1,14 +1,8 @@
 package search
 
 import (
-	"encoding/json"
-	"fmt"
-	"io/ioutil"
-	"log"
 	"sort"
-	"strings"
 
-	"github.com/kljensen/snowball/english"
 	"github.com/polisgo2020/search-tarival/index"
 )
 
@@ -26,9 +20,7 @@ type wordOnFile struct {
 }
 
 // Searching is func for search with reverse index
-func Searching(pathToIndex, pathToStopWords string, searchPhrase []string) []string {
-	index := readIndex(pathToIndex)
-	keywords := convertPharaseToKeywords(searchPhrase, pathToStopWords)
+func Searching(index index.ReverseIndex, keywords []string) []string {
 
 	results := map[string]searchResult{}
 
@@ -71,7 +63,6 @@ func Searching(pathToIndex, pathToStopWords string, searchPhrase []string) []str
 
 	sliceResults := sortSearchResults(convertMapToSlice(results))
 
-	fmt.Println(sliceResults)
 	var searchResult []string
 
 	for _, result := range sliceResults {
@@ -79,21 +70,6 @@ func Searching(pathToIndex, pathToStopWords string, searchPhrase []string) []str
 	}
 
 	return searchResult
-}
-
-func convertPharaseToKeywords(searchPhrase []string, pathToStopWords string) []string {
-	var keywords []string
-
-	mapStopWords := index.CreateStopWordsMap(pathToStopWords)
-
-	for _, keyword := range searchPhrase {
-		keyword = english.Stem(keyword, false)
-		if _, ok := mapStopWords[keyword]; ok {
-			continue
-		}
-		keywords = append(searchPhrase, strings.ToLower(keyword))
-	}
-	return keywords
 }
 
 func counterUniqueKeywords(results map[string]searchResult, keywords []string) {
@@ -176,17 +152,4 @@ func convertMapToSlice(mapResults map[string]searchResult) []searchResult {
 		})
 	}
 	return sliceResults
-}
-
-func readIndex(pathToIndex string) index.ReverseIndex {
-	file, err := ioutil.ReadFile(pathToIndex)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	index := make(index.ReverseIndex)
-	if err := json.Unmarshal(file, &index); err != nil {
-		log.Fatal(err)
-	}
-	return index
 }
