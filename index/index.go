@@ -48,6 +48,11 @@ func ReadIndex(pathToIndex string) (ReverseIndex, error) {
 	return index, nil
 }
 
+type fileData struct {
+	name string
+	text []byte
+}
+
 // IndexingFolder create a file with revrse index
 func IndexingFolder(path, pathToStopWords string) ReverseIndex {
 	files, err := ioutil.ReadDir(path)
@@ -58,11 +63,31 @@ func IndexingFolder(path, pathToStopWords string) ReverseIndex {
 	mapStopWords := CreateStopWordsMap(pathToStopWords)
 	index := make(ReverseIndex)
 
+	ch := make(chan fileData, len(files))
+	exitCh := make(chan struct{}, 1)
 	for _, file := range files {
-		addFileInIndex(file, path, mapStopWords, index)
+		// var fileText []byte
+		go readFile(path, file.Name(), ch, err)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+	// exitCh <- struct{}{}
+
+	for i := 0; ; {
+		select {
+		case <-exitCh:
+			return index
+		case file := <-ch:
+			addFileInIndex(file.name, file.text, mapStopWords, index)
+			i++
+			if i == len(files) {
+				exitCh <- struct{}{}
+			}
+		}
 	}
 
-	return index
+	// return index
 }
 
 func hasFileInIndex(sliceIndex []wordIndex, fileName string) (int, bool) {
@@ -74,11 +99,7 @@ func hasFileInIndex(sliceIndex []wordIndex, fileName string) (int, bool) {
 	return -1, false
 }
 
-func addFileInIndex(file os.FileInfo, path string, mapStopWords map[string]bool, index ReverseIndex) {
-	fileText, err := ioutil.ReadFile(path + string(os.PathSeparator) + file.Name())
-	if err != nil {
-		log.Fatal(err)
-	}
+func addFileInIndex(fileName string, fileText []byte, mapStopWords map[string]bool, index ReverseIndex) {
 
 	words := strings.Fields(string(fileText))
 
@@ -94,7 +115,7 @@ func addFileInIndex(file os.FileInfo, path string, mapStopWords map[string]bool,
 		}
 
 		if sliceIndex, ok := index[word]; ok {
-			if j, ok := hasFileInIndex(sliceIndex, file.Name()); ok {
+			if j, ok := hasFileInIndex(sliceIndex, fileName); ok {
 				index[word][j].Positions = append(index[word][j].Positions, wordPosition)
 				wordPosition++
 				continue
@@ -102,10 +123,20 @@ func addFileInIndex(file os.FileInfo, path string, mapStopWords map[string]bool,
 		}
 
 		item := wordIndex{
-			File:      file.Name(),
+			File:      fileName,
 			Positions: []int{wordPosition},
 		}
 		index[word] = append(index[word], item)
 		wordPosition++
 	}
 }
+
+func readFile(path, fileName string, ch chan fileData, err error) {
+	fileText, err := ioutil.ReadFile(path + string(os.PathSeparator) + fileName)
+	file := fileData{
+		name: fileName,
+		text: fileText,
+	}
+	ch <- file
+}
+
