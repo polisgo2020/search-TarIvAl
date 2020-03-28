@@ -7,9 +7,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
-	"strings"
 
-	"github.com/kljensen/snowball/english"
 	"github.com/polisgo2020/search-tarival/index"
 	"github.com/polisgo2020/search-tarival/search"
 )
@@ -44,7 +42,9 @@ func main() {
 		if len(os.Args) < 3 {
 			log.Fatal(errors.New("Search phrase not found"))
 		}
-		keywords := convertPharaseToKeywords(os.Args[2:], pathToStopWords)
+
+		mapStopWords := index.CreateStopWordsMap(pathToStopWords)
+		keywords := index.HandleWords(os.Args[2:], mapStopWords)
 		index, err := index.ReadIndex(indexName)
 		if err != nil {
 			log.Fatal(err)
@@ -65,19 +65,4 @@ func main() {
 	default:
 		fmt.Printf("Unknown command.\nRun 'search-tarival help' for usage.")
 	}
-}
-
-func convertPharaseToKeywords(searchPhrase []string, pathToStopWords string) []string {
-	var keywords []string
-
-	mapStopWords := index.CreateStopWordsMap(pathToStopWords)
-
-	for _, keyword := range searchPhrase {
-		keyword = english.Stem(keyword, false)
-		if _, ok := mapStopWords[keyword]; ok {
-			continue
-		}
-		keywords = append(searchPhrase, strings.ToLower(keyword))
-	}
-	return keywords
 }

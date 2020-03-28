@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"sort"
 	"strings"
 	"unicode"
 
@@ -63,31 +64,24 @@ func IndexingFolder(path, pathToStopWords string) ReverseIndex {
 	mapStopWords := CreateStopWordsMap(pathToStopWords)
 	index := make(ReverseIndex)
 
-	ch := make(chan fileData, len(files))
-	exitCh := make(chan struct{}, 1)
+	ch := make(chan fileData)
+	errCh := make(chan error)
 	for _, file := range files {
-		// var fileText []byte
-		go readFile(path, file.Name(), ch, err)
-		if err != nil {
-			log.Fatal(err)
-		}
+		go readFile(path, file.Name(), ch, errCh)
 	}
-	// exitCh <- struct{}{}
 
-	for i := 0; ; {
+	for i := 0; i != len(files); {
 		select {
-		case <-exitCh:
-			return index
 		case file := <-ch:
 			addFileInIndex(file.name, file.text, mapStopWords, index)
 			i++
-			if i == len(files) {
-				exitCh <- struct{}{}
-			}
+		case <-errCh:
+			log.Fatal(err)
 		}
 	}
-
-	// return index
+	close(ch)
+	close(errCh)
+	return index
 }
 
 func hasFileInIndex(sliceIndex []wordIndex, fileName string) (int, bool) {
@@ -102,17 +96,9 @@ func hasFileInIndex(sliceIndex []wordIndex, fileName string) (int, bool) {
 func addFileInIndex(fileName string, fileText []byte, mapStopWords map[string]bool, index ReverseIndex) {
 
 	words := strings.Fields(string(fileText))
-
+	tokens := HandleWords(words, mapStopWords)
 	wordPosition := 0
-	for _, word := range words {
-		word = strings.TrimFunc(word, func(r rune) bool {
-			return !unicode.IsLetter(r) && !unicode.IsNumber(r)
-		})
-		word = strings.ToLower(word)
-		word = english.Stem(word, false)
-		if _, ok := mapStopWords[word]; ok || word == "" {
-			continue
-		}
+	for _, word := range tokens {
 
 		if sliceIndex, ok := index[word]; ok {
 			if j, ok := hasFileInIndex(sliceIndex, fileName); ok {
@@ -129,10 +115,27 @@ func addFileInIndex(fileName string, fileText []byte, mapStopWords map[string]bo
 		index[word] = append(index[word], item)
 		wordPosition++
 	}
+
+	// for i := 0; ; {
+	// 	select {
+	// 	case <-exitCh:
+	// 		return index
+	// 	case file := <-ch:
+	// 		addFileInIndex(file.name, file.text, mapStopWords, index)
+	// 		i++
+	// 		if i == len(files) {
+	// 			exitCh <- struct{}{}
+	// 		}
+	// 	}
+	// }
 }
 
-func readFile(path, fileName string, ch chan fileData, err error) {
+func readFile(path, fileName string, ch chan fileData, errCh chan error) {
 	fileText, err := ioutil.ReadFile(path + string(os.PathSeparator) + fileName)
+	if err != nil {
+		errCh <- err
+		return
+	}
 	file := fileData{
 		name: fileName,
 		text: fileText,
@@ -140,3 +143,47 @@ func readFile(path, fileName string, ch chan fileData, err error) {
 	ch <- file
 }
 
+type tokenData struct {
+	token    string
+	position int
+}
+
+// HandleWords - convert words to correct tokens. Trim, ToLower, Stemmer and exception stop words
+func HandleWords(words []string, mapStopWords map[string]bool) []string {
+	tokensCh := make(chan tokenData)
+
+	for i, word := range words {
+		go func(position int, word string, ch chan tokenData) {
+			word = strings.TrimFunc(word, func(r rune) bool {
+				return !unicode.IsLetter(r) && !unicode.IsNumber(r)
+			})
+			word = strings.ToLower(word)
+			word = english.Stem(word, false)
+			ch <- tokenData{
+				token:    word,
+				position: position,
+			}
+		}(i, word, tokensCh)
+	}
+	var tokensData []tokenData
+	for i := 0; i < len(words); {
+		select {
+		case token := <-tokensCh:
+			tokensData = append(tokensData, token)
+			i++
+
+		}
+	}
+	sort.Slice(tokensData, func(i, j int) bool {
+		return tokensData[i].position < tokensData[j].position
+	})
+
+	var tokens []string
+	for _, token := range tokensData {
+		if _, ok := mapStopWords[token.token]; ok || token.token == "" {
+			continue
+		}
+		tokens = append(tokens, token.token)
+	}
+	return tokens
+}

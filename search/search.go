@@ -63,6 +63,7 @@ func Searching(index index.ReverseIndex, keywords []string) []string {
 
 	sliceResults := sortSearchResults(convertMapToSlice(results))
 
+	// fmt.Println(sliceResults)
 	var searchResult []string
 
 	for _, result := range sliceResults {
