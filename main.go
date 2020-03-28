@@ -29,8 +29,10 @@ func main() {
 		}
 
 		path = os.Args[2]
-		index := index.IndexingFolder(path, pathToStopWords)
-
+		index, err := index.IndexingFolder(path, pathToStopWords)
+		if err != nil {
+			log.Fatal(err)
+		}
 		output, err := json.Marshal(index)
 		if err != nil {
 			log.Fatal(err)
@@ -43,7 +45,10 @@ func main() {
 			log.Fatal(errors.New("Search phrase not found"))
 		}
 
-		mapStopWords := index.CreateStopWordsMap(pathToStopWords)
+		mapStopWords, err := index.CreateStopWordsMap(pathToStopWords)
+		if err != nil {
+			log.Fatal(err)
+		}
 		keywords := index.HandleWords(os.Args[2:], mapStopWords)
 		index, err := index.ReadIndex(indexName)
 		if err != nil {

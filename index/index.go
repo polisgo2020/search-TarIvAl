@@ -3,7 +3,6 @@ package index
 import (
 	"encoding/json"
 	"io/ioutil"
-	"log"
 	"os"
 	"sort"
 	"strings"
@@ -21,10 +20,10 @@ type wordIndex struct {
 type ReverseIndex map[string][]wordIndex
 
 // CreateStopWordsMap - create map stopWords
-func CreateStopWordsMap(path string) map[string]bool {
+func CreateStopWordsMap(path string) (map[string]bool, error) {
 	fileStopWords, err := ioutil.ReadFile(path)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 	stopWords := strings.Fields(string(fileStopWords))
 
@@ -32,7 +31,7 @@ func CreateStopWordsMap(path string) map[string]bool {
 	for _, stopWord := range stopWords {
 		mapStopWords[strings.ToLower(stopWord)] = true
 	}
-	return mapStopWords
+	return mapStopWords, nil
 }
 
 // ReadIndex - read 'pathToIndex' file and return ReverseIndex
@@ -47,100 +46,6 @@ func ReadIndex(pathToIndex string) (ReverseIndex, error) {
 		return nil, err
 	}
 	return index, nil
-}
-
-type fileData struct {
-	name string
-	text []byte
-}
-
-// IndexingFolder create a file with revrse index
-func IndexingFolder(path, pathToStopWords string) ReverseIndex {
-	files, err := ioutil.ReadDir(path)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	mapStopWords := CreateStopWordsMap(pathToStopWords)
-	index := make(ReverseIndex)
-
-	ch := make(chan fileData)
-	errCh := make(chan error)
-	for _, file := range files {
-		go readFile(path, file.Name(), ch, errCh)
-	}
-
-	for i := 0; i != len(files); {
-		select {
-		case file := <-ch:
-			addFileInIndex(file.name, file.text, mapStopWords, index)
-			i++
-		case <-errCh:
-			log.Fatal(err)
-		}
-	}
-	close(ch)
-	close(errCh)
-	return index
-}
-
-func hasFileInIndex(sliceIndex []wordIndex, fileName string) (int, bool) {
-	for i, indexWord := range sliceIndex {
-		if indexWord.File == fileName {
-			return i, true
-		}
-	}
-	return -1, false
-}
-
-func addFileInIndex(fileName string, fileText []byte, mapStopWords map[string]bool, index ReverseIndex) {
-
-	words := strings.Fields(string(fileText))
-	tokens := HandleWords(words, mapStopWords)
-	wordPosition := 0
-	for _, word := range tokens {
-
-		if sliceIndex, ok := index[word]; ok {
-			if j, ok := hasFileInIndex(sliceIndex, fileName); ok {
-				index[word][j].Positions = append(index[word][j].Positions, wordPosition)
-				wordPosition++
-				continue
-			}
-		}
-
-		item := wordIndex{
-			File:      fileName,
-			Positions: []int{wordPosition},
-		}
-		index[word] = append(index[word], item)
-		wordPosition++
-	}
-
-	// for i := 0; ; {
-	// 	select {
-	// 	case <-exitCh:
-	// 		return index
-	// 	case file := <-ch:
-	// 		addFileInIndex(file.name, file.text, mapStopWords, index)
-	// 		i++
-	// 		if i == len(files) {
-	// 			exitCh <- struct{}{}
-	// 		}
-	// 	}
-	// }
-}
-
-func readFile(path, fileName string, ch chan fileData, errCh chan error) {
-	fileText, err := ioutil.ReadFile(path + string(os.PathSeparator) + fileName)
-	if err != nil {
-		errCh <- err
-		return
-	}
-	file := fileData{
-		name: fileName,
-		text: fileText,
-	}
-	ch <- file
 }
 
 type tokenData struct {
@@ -186,4 +91,88 @@ func HandleWords(words []string, mapStopWords map[string]bool) []string {
 		tokens = append(tokens, token.token)
 	}
 	return tokens
+}
+
+type fileData struct {
+	name string
+	text []byte
+}
+
+// IndexingFolder create a file with revrse index
+func IndexingFolder(path, pathToStopWords string) (ReverseIndex, error) {
+	files, err := ioutil.ReadDir(path)
+	if err != nil {
+		return nil, err
+	}
+
+	mapStopWords, err := CreateStopWordsMap(pathToStopWords)
+	if err != nil {
+		return nil, err
+	}
+
+	index := make(ReverseIndex)
+
+	ch := make(chan fileData)
+	errCh := make(chan error)
+	for _, file := range files {
+		go readFile(path, file.Name(), ch, errCh)
+	}
+
+	for i := 0; i != len(files); {
+		select {
+		case file := <-ch:
+			addFileInIndex(file.name, file.text, mapStopWords, index)
+			i++
+		case err := <-errCh:
+			return nil, err
+		}
+	}
+	return index, nil
+}
+
+func hasFileInIndex(sliceIndex []wordIndex, fileName string) (int, bool) {
+	for i, indexWord := range sliceIndex {
+		if indexWord.File == fileName {
+			return i, true
+		}
+	}
+	return -1, false
+}
+
+func addFileInIndex(fileName string, fileText []byte, mapStopWords map[string]bool, index ReverseIndex) {
+
+	words := strings.Fields(string(fileText))
+	tokens := HandleWords(words, mapStopWords)
+	wordPosition := 0
+	for _, word := range tokens {
+
+		if sliceIndex, ok := index[word]; ok {
+			if j, ok := hasFileInIndex(sliceIndex, fileName); ok {
+				index[word][j].Positions = append(index[word][j].Positions, wordPosition)
+				wordPosition++
+				continue
+			}
+		}
+
+		item := wordIndex{
+			File:      fileName,
+			Positions: []int{wordPosition},
+		}
+		index[word] = append(index[word], item)
+		wordPosition++
+	}
+
+}
+
+func readFile(path, fileName string, ch chan fileData, errCh chan error) {
+	fileText, err := ioutil.ReadFile(path + string(os.PathSeparator) + fileName)
+	if err != nil {
+		errCh <- err
+		return
+	}
+	file := fileData{
+		name: fileName,
+		text: fileText,
+	}
+	ch <- file
 }
