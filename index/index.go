@@ -76,9 +76,9 @@ func HandleWords(words []string, mapStopWords map[string]bool) []string {
 		case token := <-tokensCh:
 			tokensData = append(tokensData, token)
 			i++
-
 		}
 	}
+	close(tokensCh)
 	sort.Slice(tokensData, func(i, j int) bool {
 		return tokensData[i].position < tokensData[j].position
 	})
@@ -124,9 +124,12 @@ func IndexingFolder(path, pathToStopWords string) (ReverseIndex, error) {
 			addFileInIndex(file.name, file.text, mapStopWords, index)
 			i++
 		case err := <-errCh:
+			close(ch)
+			close(errCh)
 			return nil, err
 		}
 	}
+
 	return index, nil
 }
 
@@ -145,7 +148,6 @@ func addFileInIndex(fileName string, fileText []byte, mapStopWords map[string]bo
 	tokens := HandleWords(words, mapStopWords)
 	wordPosition := 0
 	for _, word := range tokens {
-
 		if sliceIndex, ok := index[word]; ok {
 			if j, ok := hasFileInIndex(sliceIndex, fileName); ok {
 				index[word][j].Positions = append(index[word][j].Positions, wordPosition)
@@ -153,7 +155,6 @@ func addFileInIndex(fileName string, fileText []byte, mapStopWords map[string]bo
 				continue
 			}
 		}
-
 		item := wordIndex{
 			File:      fileName,
 			Positions: []int{wordPosition},

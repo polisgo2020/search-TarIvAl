@@ -37,7 +37,7 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		if err := ioutil.WriteFile(indexName, output, 0); err != nil {
+		if err := ioutil.WriteFile(indexName, output, 0666); err != nil {
 			log.Fatal(err)
 		}
 	case "search":
@@ -58,13 +58,8 @@ func main() {
 		searchResult := search.Searching(index, keywords)
 		output := ""
 		for i, result := range searchResult {
-			output = fmt.Sprintf("%v%v) %v\n", output, i+1, result)
+			fmt.Printf("%v%v) %v\n", output, i+1, result)
 		}
-
-		if err := ioutil.WriteFile("stdout.txt", []byte(output), 0); err != nil {
-			log.Fatal(err)
-		}
-
 	case "help":
 		fmt.Printf("Run:\n1) 'search-tarival index (path to folder for indexing)' for indexing folder\n2) 'search-tarival search (search phrase)' for search in folder with existing index")
 	default:
