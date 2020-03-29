@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"os"
-	"sort"
 	"strings"
+	"sync"
 	"unicode"
 
 	"github.com/kljensen/snowball/english"
@@ -55,40 +55,18 @@ type tokenData struct {
 
 // HandleWords - convert words to correct tokens. Trim, ToLower, Stemmer and exception stop words
 func HandleWords(words []string, mapStopWords map[string]bool) []string {
-	tokensCh := make(chan tokenData)
-
-	for i, word := range words {
-		go func(position int, word string, ch chan tokenData) {
-			word = strings.TrimFunc(word, func(r rune) bool {
-				return !unicode.IsLetter(r) && !unicode.IsNumber(r)
-			})
-			word = strings.ToLower(word)
-			word = english.Stem(word, false)
-			ch <- tokenData{
-				token:    word,
-				position: position,
-			}
-		}(i, word, tokensCh)
-	}
-	var tokensData []tokenData
-	for i := 0; i < len(words); {
-		select {
-		case token := <-tokensCh:
-			tokensData = append(tokensData, token)
-			i++
-		}
-	}
-	close(tokensCh)
-	sort.Slice(tokensData, func(i, j int) bool {
-		return tokensData[i].position < tokensData[j].position
-	})
-
 	var tokens []string
-	for _, token := range tokensData {
-		if _, ok := mapStopWords[token.token]; ok || token.token == "" {
+	for _, word := range words {
+		word = strings.TrimFunc(word, func(r rune) bool {
+			return !unicode.IsLetter(r) && !unicode.IsNumber(r)
+		})
+		word = strings.ToLower(word)
+		word = english.Stem(word, false)
+
+		if _, ok := mapStopWords[word]; ok || word == "" {
 			continue
 		}
-		tokens = append(tokens, token.token)
+		tokens = append(tokens, word)
 	}
 	return tokens
 }
@@ -118,10 +96,14 @@ func IndexingFolder(path, pathToStopWords string) (ReverseIndex, error) {
 		go readFile(path, file.Name(), ch, errCh)
 	}
 
+	mu := &sync.Mutex{}
+	wg := &sync.WaitGroup{}
+
 	for i := 0; i != len(files); {
 		select {
 		case file := <-ch:
-			addFileInIndex(file.name, file.text, mapStopWords, index)
+			wg.Add(1)
+			go addFileInIndex(file.name, file.text, mapStopWords, index, mu, wg)
 			i++
 		case err := <-errCh:
 			close(ch)
@@ -129,7 +111,7 @@ func IndexingFolder(path, pathToStopWords string) (ReverseIndex, error) {
 			return nil, err
 		}
 	}
-
+	wg.Wait()
 	return index, nil
 }
 
@@ -142,11 +124,12 @@ func hasFileInIndex(sliceIndex []wordIndex, fileName string) (int, bool) {
 	return -1, false
 }
 
-func addFileInIndex(fileName string, fileText []byte, mapStopWords map[string]bool, index ReverseIndex) {
-
+func addFileInIndex(fileName string, fileText []byte, mapStopWords map[string]bool, index ReverseIndex, mu *sync.Mutex, wg *sync.WaitGroup) {
+	defer wg.Done()
 	words := strings.Fields(string(fileText))
 	tokens := HandleWords(words, mapStopWords)
 	wordPosition := 0
+	mu.Lock()
 	for _, word := range tokens {
 		if sliceIndex, ok := index[word]; ok {
 			if j, ok := hasFileInIndex(sliceIndex, fileName); ok {
@@ -162,10 +145,10 @@ func addFileInIndex(fileName string, fileText []byte, mapStopWords map[string]bo
 		index[word] = append(index[word], item)
 		wordPosition++
 	}
-
+	mu.Unlock()
 }
 
-func readFile(path, fileName string, ch chan fileData, errCh chan error) {
+func readFile(path, fileName string, ch chan<- fileData, errCh chan<- error) {
 	fileText, err := ioutil.ReadFile(path + string(os.PathSeparator) + fileName)
 	if err != nil {
 		errCh <- err
