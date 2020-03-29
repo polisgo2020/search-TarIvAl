@@ -111,6 +111,8 @@ func IndexingFolder(path, pathToStopWords string) (ReverseIndex, error) {
 			return nil, err
 		}
 	}
+	close(ch)
+	close(errCh)
 	wg.Wait()
 	return index, nil
 }
