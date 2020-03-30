@@ -99,6 +99,9 @@ func IndexingFolder(path, pathToStopWords string) (ReverseIndex, error) {
 	mu := &sync.Mutex{}
 	wg := &sync.WaitGroup{}
 
+	defer close(ch)
+	defer close(errCh)
+
 	for i := 0; i != len(files); {
 		select {
 		case file := <-ch:
@@ -106,13 +109,9 @@ func IndexingFolder(path, pathToStopWords string) (ReverseIndex, error) {
 			go addFileInIndex(file.name, file.text, mapStopWords, index, mu, wg)
 			i++
 		case err := <-errCh:
-			close(ch)
-			close(errCh)
 			return nil, err
 		}
 	}
-	close(ch)
-	close(errCh)
 	wg.Wait()
 	return index, nil
 }
