@@ -20,16 +20,16 @@ type wordIndex struct {
 type ReverseIndex map[string][]wordIndex
 
 // CreateStopWordsMap - create map stopWords
-func CreateStopWordsMap(path string) (map[string]bool, error) {
+func CreateStopWordsMap(path string) (map[string]struct{}, error) {
 	fileStopWords, err := ioutil.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
 	stopWords := strings.Fields(string(fileStopWords))
 
-	mapStopWords := map[string]bool{}
+	mapStopWords := map[string]struct{}{}
 	for _, stopWord := range stopWords {
-		mapStopWords[strings.ToLower(stopWord)] = true
+		mapStopWords[strings.ToLower(stopWord)] = struct{}{}
 	}
 	return mapStopWords, nil
 }
@@ -54,7 +54,7 @@ type tokenData struct {
 }
 
 // HandleWords - convert words to correct tokens. Trim, ToLower, Stemmer and exception stop words
-func HandleWords(words []string, mapStopWords map[string]bool) []string {
+func HandleWords(words []string, mapStopWords map[string]struct{}) []string {
 	var tokens []string
 	for _, word := range words {
 		word = strings.TrimFunc(word, func(r rune) bool {
@@ -125,7 +125,7 @@ func hasFileInIndex(sliceIndex []wordIndex, fileName string) (int, bool) {
 	return -1, false
 }
 
-func addFileInIndex(fileName string, fileText []byte, mapStopWords map[string]bool, index ReverseIndex, mu *sync.Mutex, wg *sync.WaitGroup) {
+func addFileInIndex(fileName string, fileText []byte, mapStopWords map[string]struct{}, index ReverseIndex, mu *sync.Mutex, wg *sync.WaitGroup) {
 	defer wg.Done()
 	words := strings.Fields(string(fileText))
 	tokens := HandleWords(words, mapStopWords)
