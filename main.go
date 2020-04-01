@@ -44,15 +44,17 @@ func main() {
 		}
 
 		keywords := index.HandleWords(os.Args[2:])
+		if len(keywords) == 0 {
+			log.Fatal(errors.New("Search phrase doesn't contain keywords"))
+		}
 		index, err := index.ReadIndexJSON(indexName)
 		if err != nil {
 			log.Fatal(err)
 		}
 
 		searchResult := search.Searching(index, keywords)
-		output := ""
 		for i, result := range searchResult {
-			fmt.Printf("%v%v) %v\n", output, i+1, result)
+			fmt.Printf("%v) %v\n", i+1, result)
 		}
 	case "help":
 		fmt.Printf("Run:\n1) 'search-tarival index (path to folder for indexing)' for indexing folder\n2) 'search-tarival search (search phrase)' for search in folder with existing index")

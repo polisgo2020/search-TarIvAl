@@ -88,6 +88,8 @@ func IndexingFolder(path string) (ReverseIndex, error) {
 		return nil, err
 	}
 
+	files = deleteDirs(files)
+
 	index := make(ReverseIndex)
 
 	ch := make(chan fileData)
@@ -136,4 +138,16 @@ func readFile(path, fileName string, ch chan<- fileData, errCh chan<- error) {
 		text: fileText,
 	}
 	ch <- file
+}
+
+func deleteDirs(files []os.FileInfo) []os.FileInfo {
+	i := 0
+	for _, file := range files {
+		if !file.IsDir() && file.Mode().IsRegular() {
+			files[i] = file
+			i++
+		}
+	}
+	files = files[:i]
+	return files
 }
