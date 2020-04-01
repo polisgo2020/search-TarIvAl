@@ -18,8 +18,6 @@ func main() {
 	if len(os.Args) < 2 {
 		log.Fatal(errors.New("Command not found"))
 	}
-
-	pathToStopWords := "stopwords.txt"
 	indexName := "index.json"
 
 	switch os.Args[1] {
@@ -29,7 +27,7 @@ func main() {
 		}
 
 		path = os.Args[2]
-		index, err := index.IndexingFolder(path, pathToStopWords)
+		index, err := index.IndexingFolder(path)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -45,11 +43,7 @@ func main() {
 			log.Fatal(errors.New("Search phrase not found"))
 		}
 
-		mapStopWords, err := index.CreateStopWordsMap(pathToStopWords)
-		if err != nil {
-			log.Fatal(err)
-		}
-		keywords := index.HandleWords(os.Args[2:], mapStopWords)
+		keywords := index.HandleWords(os.Args[2:])
 		index, err := index.ReadIndex(indexName)
 		if err != nil {
 			log.Fatal(err)

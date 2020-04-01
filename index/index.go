@@ -9,6 +9,7 @@ import (
 	"unicode"
 
 	"github.com/kljensen/snowball/english"
+	"github.com/zoomio/stopwords"
 )
 
 type wordIndex struct {
@@ -18,21 +19,6 @@ type wordIndex struct {
 
 // ReverseIndex is type for storage reverse index in program
 type ReverseIndex map[string][]wordIndex
-
-// CreateStopWordsMap - create map stopWords
-func CreateStopWordsMap(path string) (map[string]struct{}, error) {
-	fileStopWords, err := ioutil.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	stopWords := strings.Fields(string(fileStopWords))
-
-	mapStopWords := map[string]struct{}{}
-	for _, stopWord := range stopWords {
-		mapStopWords[strings.ToLower(stopWord)] = struct{}{}
-	}
-	return mapStopWords, nil
-}
 
 // ReadIndex - read 'pathToIndex' file and return ReverseIndex
 func ReadIndex(pathToIndex string) (ReverseIndex, error) {
@@ -54,7 +40,7 @@ type tokenData struct {
 }
 
 // HandleWords - convert words to correct tokens. Trim, ToLower, Stemmer and exception stop words
-func HandleWords(words []string, mapStopWords map[string]struct{}) []string {
+func HandleWords(words []string) []string {
 	var tokens []string
 	for _, word := range words {
 		word = strings.TrimFunc(word, func(r rune) bool {
@@ -63,7 +49,7 @@ func HandleWords(words []string, mapStopWords map[string]struct{}) []string {
 		word = strings.ToLower(word)
 		word = english.Stem(word, false)
 
-		if _, ok := mapStopWords[word]; ok || word == "" {
+		if stopwords.IsStopWord(word) || word == "" {
 			continue
 		}
 		tokens = append(tokens, word)
@@ -77,13 +63,8 @@ type fileData struct {
 }
 
 // IndexingFolder create a file with revrse index
-func IndexingFolder(path, pathToStopWords string) (ReverseIndex, error) {
+func IndexingFolder(path string) (ReverseIndex, error) {
 	files, err := ioutil.ReadDir(path)
-	if err != nil {
-		return nil, err
-	}
-
-	mapStopWords, err := CreateStopWordsMap(pathToStopWords)
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +87,7 @@ func IndexingFolder(path, pathToStopWords string) (ReverseIndex, error) {
 		select {
 		case file := <-ch:
 			wg.Add(1)
-			go addFileInIndex(file.name, file.text, mapStopWords, index, mu, wg)
+			go addFileInIndex(file.name, file.text, index, mu, wg)
 			i++
 		case err := <-errCh:
 			return nil, err
@@ -125,10 +106,10 @@ func hasFileInIndex(sliceIndex []wordIndex, fileName string) (int, bool) {
 	return -1, false
 }
 
-func addFileInIndex(fileName string, fileText []byte, mapStopWords map[string]struct{}, index ReverseIndex, mu *sync.Mutex, wg *sync.WaitGroup) {
+func addFileInIndex(fileName string, fileText []byte, index ReverseIndex, mu *sync.Mutex, wg *sync.WaitGroup) {
 	defer wg.Done()
 	words := strings.Fields(string(fileText))
-	tokens := HandleWords(words, mapStopWords)
+	tokens := HandleWords(words)
 	wordPosition := 0
 	mu.Lock()
 	for _, word := range tokens {
