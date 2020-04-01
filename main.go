@@ -44,7 +44,7 @@ func main() {
 		}
 
 		keywords := index.HandleWords(os.Args[2:])
-		index, err := index.ReadIndex(indexName)
+		index, err := index.ReadIndexJSON(indexName)
 		if err != nil {
 			log.Fatal(err)
 		}

@@ -20,8 +20,32 @@ type wordIndex struct {
 // ReverseIndex is type for storage reverse index in program
 type ReverseIndex map[string][]wordIndex
 
-// ReadIndex - read 'pathToIndex' file and return ReverseIndex
-func ReadIndex(pathToIndex string) (ReverseIndex, error) {
+func (index ReverseIndex) addFileInIndex(fileName string, fileText []byte, mu *sync.Mutex, wg *sync.WaitGroup) {
+	defer wg.Done()
+	words := strings.Fields(string(fileText))
+	tokens := HandleWords(words)
+	wordPosition := 0
+	mu.Lock()
+	for _, word := range tokens {
+		if sliceIndex, ok := index[word]; ok {
+			if j := hasFileInIndex(sliceIndex, fileName); j != -1 {
+				index[word][j].Positions = append(index[word][j].Positions, wordPosition)
+				wordPosition++
+				continue
+			}
+		}
+		item := wordIndex{
+			File:      fileName,
+			Positions: []int{wordPosition},
+		}
+		index[word] = append(index[word], item)
+		wordPosition++
+	}
+	mu.Unlock()
+}
+
+// ReadIndexJSON - read 'pathToIndex' file and return ReverseIndex
+func ReadIndexJSON(pathToIndex string) (ReverseIndex, error) {
 	file, err := ioutil.ReadFile(pathToIndex)
 	if err != nil {
 		return nil, err
@@ -32,11 +56,6 @@ func ReadIndex(pathToIndex string) (ReverseIndex, error) {
 		return nil, err
 	}
 	return index, nil
-}
-
-type tokenData struct {
-	token    string
-	position int
 }
 
 // HandleWords - convert words to correct tokens. Trim, ToLower, Stemmer and exception stop words
@@ -87,7 +106,7 @@ func IndexingFolder(path string) (ReverseIndex, error) {
 		select {
 		case file := <-ch:
 			wg.Add(1)
-			go addFileInIndex(file.name, file.text, index, mu, wg)
+			go index.addFileInIndex(file.name, file.text, mu, wg)
 			i++
 		case err := <-errCh:
 			return nil, err
@@ -97,37 +116,13 @@ func IndexingFolder(path string) (ReverseIndex, error) {
 	return index, nil
 }
 
-func hasFileInIndex(sliceIndex []wordIndex, fileName string) (int, bool) {
+func hasFileInIndex(sliceIndex []wordIndex, fileName string) int {
 	for i, indexWord := range sliceIndex {
 		if indexWord.File == fileName {
-			return i, true
+			return i
 		}
 	}
-	return -1, false
-}
-
-func addFileInIndex(fileName string, fileText []byte, index ReverseIndex, mu *sync.Mutex, wg *sync.WaitGroup) {
-	defer wg.Done()
-	words := strings.Fields(string(fileText))
-	tokens := HandleWords(words)
-	wordPosition := 0
-	mu.Lock()
-	for _, word := range tokens {
-		if sliceIndex, ok := index[word]; ok {
-			if j, ok := hasFileInIndex(sliceIndex, fileName); ok {
-				index[word][j].Positions = append(index[word][j].Positions, wordPosition)
-				wordPosition++
-				continue
-			}
-		}
-		item := wordIndex{
-			File:      fileName,
-			Positions: []int{wordPosition},
-		}
-		index[word] = append(index[word], item)
-		wordPosition++
-	}
-	mu.Unlock()
+	return -1
 }
 
 func readFile(path, fileName string, ch chan<- fileData, errCh chan<- error) {

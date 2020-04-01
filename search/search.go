@@ -61,7 +61,9 @@ func Searching(index index.ReverseIndex, keywords []string) []string {
 		results[file] = result
 	}
 
-	sliceResults := sortSearchResults(convertMapToSlice(results))
+	sliceResults := convertMapToSlice(results)
+
+	sortSearchResults(sliceResults)
 
 	var searchResult []string
 
@@ -125,7 +127,7 @@ func maxLengthSearchPhrase(words []wordOnFile, keywords []string) int {
 	return maxLength
 }
 
-func sortSearchResults(sliceResults []searchResult) []searchResult {
+func sortSearchResults(sliceResults []searchResult) {
 	sort.Slice(sliceResults, func(i, j int) bool {
 		if sliceResults[i].maxLengthPhrase > sliceResults[j].maxLengthPhrase {
 			return true
@@ -138,7 +140,6 @@ func sortSearchResults(sliceResults []searchResult) []searchResult {
 		}
 		return false
 	})
-	return sliceResults
 }
 
 func convertMapToSlice(mapResults map[string]searchResult) []searchResult {
