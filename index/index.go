@@ -3,9 +3,9 @@ package index
 import (
 	"encoding/json"
 	"io/ioutil"
-	"log"
 	"os"
 	"strings"
+	"sync"
 	"unicode"
 
 	"github.com/kljensen/snowball/english"
@@ -20,18 +20,18 @@ type wordIndex struct {
 type ReverseIndex map[string][]wordIndex
 
 // CreateStopWordsMap - create map stopWords
-func CreateStopWordsMap(path string) map[string]bool {
+func CreateStopWordsMap(path string) (map[string]struct{}, error) {
 	fileStopWords, err := ioutil.ReadFile(path)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 	stopWords := strings.Fields(string(fileStopWords))
 
-	mapStopWords := map[string]bool{}
+	mapStopWords := map[string]struct{}{}
 	for _, stopWord := range stopWords {
-		mapStopWords[strings.ToLower(stopWord)] = true
+		mapStopWords[strings.ToLower(stopWord)] = struct{}{}
 	}
-	return mapStopWords
+	return mapStopWords, nil
 }
 
 // ReadIndex - read 'pathToIndex' file and return ReverseIndex
@@ -48,21 +48,72 @@ func ReadIndex(pathToIndex string) (ReverseIndex, error) {
 	return index, nil
 }
 
+type tokenData struct {
+	token    string
+	position int
+}
+
+// HandleWords - convert words to correct tokens. Trim, ToLower, Stemmer and exception stop words
+func HandleWords(words []string, mapStopWords map[string]struct{}) []string {
+	var tokens []string
+	for _, word := range words {
+		word = strings.TrimFunc(word, func(r rune) bool {
+			return !unicode.IsLetter(r) && !unicode.IsNumber(r)
+		})
+		word = strings.ToLower(word)
+		word = english.Stem(word, false)
+
+		if _, ok := mapStopWords[word]; ok || word == "" {
+			continue
+		}
+		tokens = append(tokens, word)
+	}
+	return tokens
+}
+
+type fileData struct {
+	name string
+	text []byte
+}
+
 // IndexingFolder create a file with revrse index
-func IndexingFolder(path, pathToStopWords string) ReverseIndex {
+func IndexingFolder(path, pathToStopWords string) (ReverseIndex, error) {
 	files, err := ioutil.ReadDir(path)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 
-	mapStopWords := CreateStopWordsMap(pathToStopWords)
+	mapStopWords, err := CreateStopWordsMap(pathToStopWords)
+	if err != nil {
+		return nil, err
+	}
+
 	index := make(ReverseIndex)
 
+	ch := make(chan fileData)
+	errCh := make(chan error)
 	for _, file := range files {
-		addFileInIndex(file, path, mapStopWords, index)
+		go readFile(path, file.Name(), ch, errCh)
 	}
 
-	return index
+	mu := &sync.Mutex{}
+	wg := &sync.WaitGroup{}
+
+	defer close(ch)
+	defer close(errCh)
+
+	for i := 0; i != len(files); {
+		select {
+		case file := <-ch:
+			wg.Add(1)
+			go addFileInIndex(file.name, file.text, mapStopWords, index, mu, wg)
+			i++
+		case err := <-errCh:
+			return nil, err
+		}
+	}
+	wg.Wait()
+	return index, nil
 }
 
 func hasFileInIndex(sliceIndex []wordIndex, fileName string) (int, bool) {
@@ -74,38 +125,39 @@ func hasFileInIndex(sliceIndex []wordIndex, fileName string) (int, bool) {
 	return -1, false
 }
 
-func addFileInIndex(file os.FileInfo, path string, mapStopWords map[string]bool, index ReverseIndex) {
-	fileText, err := ioutil.ReadFile(path + string(os.PathSeparator) + file.Name())
-	if err != nil {
-		log.Fatal(err)
-	}
-
+func addFileInIndex(fileName string, fileText []byte, mapStopWords map[string]struct{}, index ReverseIndex, mu *sync.Mutex, wg *sync.WaitGroup) {
+	defer wg.Done()
 	words := strings.Fields(string(fileText))
-
+	tokens := HandleWords(words, mapStopWords)
 	wordPosition := 0
-	for _, word := range words {
-		word = strings.TrimFunc(word, func(r rune) bool {
-			return !unicode.IsLetter(r) && !unicode.IsNumber(r)
-		})
-		word = strings.ToLower(word)
-		word = english.Stem(word, false)
-		if _, ok := mapStopWords[word]; ok || word == "" {
-			continue
-		}
-
+	mu.Lock()
+	for _, word := range tokens {
 		if sliceIndex, ok := index[word]; ok {
-			if j, ok := hasFileInIndex(sliceIndex, file.Name()); ok {
+			if j, ok := hasFileInIndex(sliceIndex, fileName); ok {
 				index[word][j].Positions = append(index[word][j].Positions, wordPosition)
 				wordPosition++
 				continue
 			}
 		}
-
 		item := wordIndex{
-			File:      file.Name(),
+			File:      fileName,
 			Positions: []int{wordPosition},
 		}
 		index[word] = append(index[word], item)
 		wordPosition++
 	}
+	mu.Unlock()
+}
+
+func readFile(path, fileName string, ch chan<- fileData, errCh chan<- error) {
+	fileText, err := ioutil.ReadFile(path + string(os.PathSeparator) + fileName)
+	if err != nil {
+		errCh <- err
+		return
+	}
+	file := fileData{
+		name: fileName,
+		text: fileText,
+	}
+	ch <- file
 }
