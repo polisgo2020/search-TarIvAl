@@ -1,7 +1,9 @@
 package search
 
 import (
+	"errors"
 	"sort"
+	"strings"
 
 	"github.com/polisgo2020/search-tarival/index"
 )
@@ -20,12 +22,18 @@ type wordOnFile struct {
 }
 
 // Searching is func for search with reverse index
-func Searching(index index.ReverseIndex, keywords []string) []string {
+func Searching(Index index.ReverseIndex, searchPhrase string) ([]string, error) {
+	keywords := strings.Fields(searchPhrase)
+	keywords = index.HandleWords(keywords)
+
+	if len(keywords) == 0 {
+		return nil, errors.New("Search phrase doesn't contain right keywords")
+	}
 
 	results := map[string]searchResult{}
 
 	for _, keyword := range keywords {
-		if keywordIndex, ok := index[keyword]; ok {
+		if keywordIndex, ok := Index[keyword]; ok {
 			for _, indexFile := range keywordIndex {
 				var words []wordOnFile
 
@@ -71,7 +79,7 @@ func Searching(index index.ReverseIndex, keywords []string) []string {
 		searchResult = append(searchResult, result.file)
 	}
 
-	return searchResult
+	return searchResult, nil
 }
 
 func counterUniqueKeywords(results map[string]searchResult, keywords []string) {
