@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net/http"
 	"os"
 
 	"github.com/polisgo2020/search-tarival/index"
@@ -71,8 +72,21 @@ func indexFunc(c *cli.Context) error {
 }
 
 func searchFunc(c *cli.Context) error {
+	http.HandleFunc("/", handleSearch)
 
-	searchPhrase := c.Args().Get(0)
+	fmt.Println("Server started")
+
+	err := http.ListenAndServe(":8080", nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return nil
+}
+
+func handleSearch(w http.ResponseWriter, r *http.Request) {
+
+	searchPhrase := r.URL.Query().Get("searchPhrase")
 
 	if len(searchPhrase) == 0 {
 		log.Fatal(errors.New("Search phrase not found"))
@@ -89,7 +103,6 @@ func searchFunc(c *cli.Context) error {
 	}
 
 	for i, result := range searchResult {
-		fmt.Printf("%v) %v\n", i+1, result)
+		fmt.Fprintf(w, "<p>%v) %v</p>\n", i+1, result)
 	}
-	return nil
 }

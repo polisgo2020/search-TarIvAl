@@ -20,7 +20,7 @@ type wordIndex struct {
 // ReverseIndex is type for storage reverse index in program
 type ReverseIndex map[string][]wordIndex
 
-func (index ReverseIndex) addFileInIndex(fileName string, fileText []byte, mu *sync.Mutex, wg *sync.WaitGroup) {
+func (index ReverseIndex) addFileInIndex(fileName string, fileText string, mu *sync.Mutex, wg *sync.WaitGroup) {
 	defer wg.Done()
 	words := strings.Fields(string(fileText))
 	tokens := HandleWords(words)
@@ -108,7 +108,7 @@ func IndexingFolder(path string) (ReverseIndex, error) {
 		select {
 		case file := <-ch:
 			wg.Add(1)
-			go index.addFileInIndex(file.name, file.text, mu, wg)
+			go index.addFileInIndex(file.name, string(file.text), mu, wg)
 			i++
 		case err := <-errCh:
 			return nil, err
@@ -143,7 +143,7 @@ func readFile(path, fileName string, ch chan<- fileData, errCh chan<- error) {
 func deleteDirs(files []os.FileInfo) []os.FileInfo {
 	i := 0
 	for _, file := range files {
-		if !file.IsDir() && file.Mode().IsRegular() {
+		if !file.IsDir() {
 			files[i] = file
 			i++
 		}
