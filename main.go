@@ -15,7 +15,7 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-const indexName = "index.json"
+var indexName = "index.json"
 
 func main() {
 	app := &cli.App{
@@ -73,7 +73,7 @@ func indexFunc(c *cli.Context) error {
 
 func searchFunc(c *cli.Context) error {
 
-	// indexFile := c.Args().Get(0)
+	indexName = c.Args().Get(0)
 	port := c.Args().Get(1)
 
 	http.HandleFunc("/", handleSearch)
