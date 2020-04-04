@@ -8,29 +8,29 @@ import (
 
 func TestAddFileInIndex(t *testing.T) {
 	expect := ReverseIndex{
-		"black": []wordIndex{
-			wordIndex{"3.txt", []int{0}},
-			wordIndex{"4.txt", []int{0, 4}},
+		"black": []WordIndex{
+			WordIndex{"3.txt", []int{0}},
+			WordIndex{"4.txt", []int{0, 4}},
 		},
-		"cup": []wordIndex{
-			wordIndex{"1.txt", []int{0}},
-			wordIndex{"2.txt", []int{0}},
+		"cup": []WordIndex{
+			WordIndex{"1.txt", []int{0}},
+			WordIndex{"2.txt", []int{0}},
 		},
-		"tea": []wordIndex{
-			wordIndex{"1.txt", []int{2}},
-			wordIndex{"2.txt", []int{1}},
-			wordIndex{"3.txt", []int{1}},
-			wordIndex{"4.txt", []int{1, 2, 3}},
+		"tea": []WordIndex{
+			WordIndex{"1.txt", []int{2}},
+			WordIndex{"2.txt", []int{1}},
+			WordIndex{"3.txt", []int{1}},
+			WordIndex{"4.txt", []int{1, 2, 3}},
 		},
 	}
 	actual := ReverseIndex{
-		"cup": []wordIndex{
-			wordIndex{"1.txt", []int{0}},
-			wordIndex{"2.txt", []int{0}},
+		"cup": []WordIndex{
+			WordIndex{"1.txt", []int{0}},
+			WordIndex{"2.txt", []int{0}},
 		},
-		"tea": []wordIndex{
-			wordIndex{"1.txt", []int{2}},
-			wordIndex{"2.txt", []int{1}},
+		"tea": []WordIndex{
+			WordIndex{"1.txt", []int{2}},
+			WordIndex{"2.txt", []int{1}},
 		},
 	}
 
@@ -69,9 +69,9 @@ func TestHandleWords(t *testing.T) {
 }
 
 func TestHasFileInIndex(t *testing.T) {
-	in := []wordIndex{
-		wordIndex{"3.txt", []int{0}},
-		wordIndex{"1.txt", []int{1}},
+	in := []WordIndex{
+		WordIndex{"3.txt", []int{0}},
+		WordIndex{"1.txt", []int{1}},
 	}
 	right := "1.txt"
 	wrong := "3.json"

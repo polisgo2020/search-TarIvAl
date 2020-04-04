@@ -12,13 +12,14 @@ import (
 	"github.com/zoomio/stopwords"
 )
 
-type wordIndex struct {
+// WordIndex - part index for positions word in one file
+type WordIndex struct {
 	File      string
 	Positions []int
 }
 
 // ReverseIndex is type for storage reverse index in program
-type ReverseIndex map[string][]wordIndex
+type ReverseIndex map[string][]WordIndex
 
 func (index ReverseIndex) addFileInIndex(fileName string, fileText string, mu *sync.Mutex, wg *sync.WaitGroup) {
 	defer wg.Done()
@@ -34,7 +35,7 @@ func (index ReverseIndex) addFileInIndex(fileName string, fileText string, mu *s
 				continue
 			}
 		}
-		item := wordIndex{
+		item := WordIndex{
 			File:      fileName,
 			Positions: []int{wordPosition},
 		}
@@ -118,7 +119,7 @@ func IndexingFolder(path string) (ReverseIndex, error) {
 	return index, nil
 }
 
-func hasFileInIndex(sliceIndex []wordIndex, fileName string) int {
+func hasFileInIndex(sliceIndex []WordIndex, fileName string) int {
 	for i, indexWord := range sliceIndex {
 		if indexWord.File == fileName {
 			return i
