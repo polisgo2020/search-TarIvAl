@@ -72,11 +72,15 @@ func indexFunc(c *cli.Context) error {
 }
 
 func searchFunc(c *cli.Context) error {
+
+	// indexFile := c.Args().Get(0)
+	port := c.Args().Get(1)
+
 	http.HandleFunc("/", handleSearch)
 
-	fmt.Println("Server started")
+	fmt.Println("Server started at port ", port)
 
-	err := http.ListenAndServe(":8080", nil)
+	err := http.ListenAndServe(":"+port, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -89,7 +93,7 @@ func handleSearch(w http.ResponseWriter, r *http.Request) {
 	searchPhrase := r.URL.Query().Get("searchPhrase")
 
 	if len(searchPhrase) == 0 {
-		fmt.Fprintln(w, errors.New("Search phrase not found").Error())
+		fmt.Fprintln(w, "Search phrase not found")
 		return
 	}
 
