@@ -89,17 +89,20 @@ func handleSearch(w http.ResponseWriter, r *http.Request) {
 	searchPhrase := r.URL.Query().Get("searchPhrase")
 
 	if len(searchPhrase) == 0 {
-		log.Fatal(errors.New("Search phrase not found"))
+		fmt.Fprintln(w, errors.New("Search phrase not found").Error())
+		return
 	}
 
 	index, err := index.ReadIndexJSON(indexName)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Fprintln(w, err.Error())
+		return
 	}
 
 	searchResult, err := search.Searching(index, searchPhrase)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Fprintln(w, err.Error())
+		return
 	}
 
 	for i, result := range searchResult {
