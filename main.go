@@ -70,7 +70,7 @@ func indexFunc(c *cli.Context) error {
 func searchFunc(c *cli.Context) error {
 
 	indexName := c.Args().Get(0)
-	port := c.Args().Get(1)
+	interfaceListen := c.Args().Get(1)
 
 	index, err := index.ReadIndexJSON(indexName)
 	if err != nil {
@@ -81,9 +81,9 @@ func searchFunc(c *cli.Context) error {
 		handleSearch(w, r, index)
 	})
 
-	fmt.Println("Server started at port ", port)
+	fmt.Println("Server started to listen at intterface ", interfaceListen)
 
-	err = http.ListenAndServe(":"+port, nil)
+	err = http.ListenAndServe(interfaceListen, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
