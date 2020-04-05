@@ -10,12 +10,8 @@ import (
 	"os"
 
 	"github.com/polisgo2020/search-tarival/index"
-	"github.com/polisgo2020/search-tarival/search"
-
 	"github.com/urfave/cli/v2"
 )
-
-var indexName = "index.json"
 
 func main() {
 	app := &cli.App{
@@ -65,7 +61,7 @@ func indexFunc(c *cli.Context) error {
 	if err != nil {
 		log.Fatal(err)
 	}
-	if err := ioutil.WriteFile(indexName, output, 0666); err != nil {
+	if err := ioutil.WriteFile("index.json", output, 0666); err != nil {
 		log.Fatal(err)
 	}
 	return nil
@@ -73,14 +69,21 @@ func indexFunc(c *cli.Context) error {
 
 func searchFunc(c *cli.Context) error {
 
-	indexName = c.Args().Get(0)
+	indexName := c.Args().Get(0)
 	port := c.Args().Get(1)
 
-	http.HandleFunc("/", handleSearch)
+	index, err := index.ReadIndexJSON(indexName)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		handleSearch(w, r, index)
+	})
 
 	fmt.Println("Server started at port ", port)
 
-	err := http.ListenAndServe(":"+port, nil)
+	err = http.ListenAndServe(":"+port, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -88,22 +91,18 @@ func searchFunc(c *cli.Context) error {
 	return nil
 }
 
-func handleSearch(w http.ResponseWriter, r *http.Request) {
+func handleSearch(w http.ResponseWriter, r *http.Request, Index index.ReverseIndex) {
 
 	searchPhrase := r.URL.Query().Get("searchPhrase")
+
+	fmt.Printf("Get search phrase: %v\n", searchPhrase)
 
 	if len(searchPhrase) == 0 {
 		fmt.Fprintln(w, "Search phrase not found")
 		return
 	}
 
-	index, err := index.ReadIndexJSON(indexName)
-	if err != nil {
-		fmt.Fprintln(w, err.Error())
-		return
-	}
-
-	searchResult, err := search.Searching(index, searchPhrase)
+	searchResult, err := Index.Searching(searchPhrase)
 	if err != nil {
 		fmt.Fprintln(w, err.Error())
 		return

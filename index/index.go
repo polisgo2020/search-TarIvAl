@@ -2,8 +2,10 @@ package index
 
 import (
 	"encoding/json"
+	"errors"
 	"io/ioutil"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"unicode"
@@ -11,6 +13,8 @@ import (
 	"github.com/kljensen/snowball/english"
 	"github.com/zoomio/stopwords"
 )
+
+// indexing
 
 // WordIndex - part index for positions word in one file
 type WordIndex struct {
@@ -151,4 +155,160 @@ func deleteDirs(files []os.FileInfo) []os.FileInfo {
 	}
 	files = files[:i]
 	return files
+}
+
+// searching
+type searchResult struct {
+	file            string
+	count           int
+	uniqueKeywords  int
+	maxLengthPhrase int
+	words           []wordOnFile
+}
+
+type wordOnFile struct {
+	word     string
+	position int
+}
+
+// Searching is func for search with reverse index
+func (index ReverseIndex) Searching(searchPhrase string) ([]string, error) {
+	keywords := strings.Fields(searchPhrase)
+	keywords = HandleWords(keywords)
+
+	if len(keywords) == 0 {
+		return nil, errors.New("Search phrase doesn't contain right keywords")
+	}
+
+	results := map[string]searchResult{}
+
+	for _, keyword := range keywords {
+		if keywordIndex, ok := index[keyword]; ok {
+			for _, indexFile := range keywordIndex {
+				var words []wordOnFile
+
+				for _, position := range indexFile.Positions {
+					words = append(words, wordOnFile{
+						word:     keyword,
+						position: position,
+					})
+				}
+
+				if _, ok := results[indexFile.File]; !ok {
+					results[indexFile.File] = searchResult{
+						count:          len(indexFile.Positions),
+						uniqueKeywords: 0,
+						words:          words,
+					}
+				} else {
+					result := results[indexFile.File]
+					result.words = append(result.words, words...)
+					result.count += len(indexFile.Positions)
+					results[indexFile.File] = result
+
+				}
+			}
+		}
+	}
+
+	counterUniqueKeywords(results, keywords)
+	sortPositions(results)
+
+	for file, result := range results {
+		result.maxLengthPhrase = maxLengthSearchPhrase(result.words, keywords)
+		results[file] = result
+	}
+
+	sliceResults := convertMapToSlice(results)
+
+	sortSearchResults(sliceResults)
+
+	var searchResult []string
+
+	for _, result := range sliceResults {
+		searchResult = append(searchResult, result.file)
+	}
+
+	return searchResult, nil
+}
+
+func counterUniqueKeywords(results map[string]searchResult, keywords []string) {
+	for i, result := range results {
+		for _, keyword := range keywords {
+			for _, Word := range result.words {
+				if Word.word == keyword {
+					result.uniqueKeywords++
+					break
+				}
+			}
+		}
+		results[i] = result
+	}
+}
+
+func sortPositions(results map[string]searchResult) {
+	for file, result := range results {
+		sort.Slice(result.words, func(i, j int) bool { return result.words[i].position < result.words[j].position })
+		results[file] = result
+	}
+}
+
+func maxLengthSearchPhrase(words []wordOnFile, keywords []string) int {
+	startKeywordPhrasePositon := 0
+	length := 0
+	maxLength := 1
+	prevPosition := words[0].position - 1
+	for _, wordData := range words {
+		if startKeywordPhrasePositon+length >= len(keywords) {
+			return maxLength
+		}
+		if wordData.word == keywords[startKeywordPhrasePositon+length] && wordData.position-1 == prevPosition {
+			length++
+			if length > maxLength {
+				maxLength = length
+			}
+			if length == len(keywords) {
+				return maxLength
+			}
+		} else {
+			length = 0
+			for i, keyword := range keywords {
+				if wordData.word == keyword {
+					length = 1
+					startKeywordPhrasePositon = i
+					break
+				}
+			}
+		}
+		prevPosition = wordData.position
+	}
+	return maxLength
+}
+
+func sortSearchResults(sliceResults []searchResult) {
+	sort.Slice(sliceResults, func(i, j int) bool {
+		if sliceResults[i].maxLengthPhrase > sliceResults[j].maxLengthPhrase {
+			return true
+		}
+		if sliceResults[i].maxLengthPhrase == sliceResults[j].maxLengthPhrase && sliceResults[i].uniqueKeywords > sliceResults[j].uniqueKeywords {
+			return true
+		}
+		if sliceResults[i].maxLengthPhrase == sliceResults[j].maxLengthPhrase && sliceResults[i].uniqueKeywords == sliceResults[j].uniqueKeywords && sliceResults[i].count > sliceResults[j].count {
+			return true
+		}
+		return false
+	})
+}
+
+func convertMapToSlice(mapResults map[string]searchResult) []searchResult {
+	sliceResults := []searchResult{}
+	for file, result := range mapResults {
+		sliceResults = append(sliceResults, searchResult{
+			file:            file,
+			count:           result.count,
+			uniqueKeywords:  result.uniqueKeywords,
+			maxLengthPhrase: result.maxLengthPhrase,
+		})
+	}
+	return sliceResults
 }
