@@ -27,8 +27,10 @@ func main() {
 			Action:  indexFunc,
 			Flags: []cli.Flag{
 				&cli.StringFlag{
-					Name:  "path",
-					Usage: "path to directory",
+					Name:     "path",
+					Aliases:  []string{"p"},
+					Required: true,
+					Usage:    "path to directory",
 				},
 			},
 		},
@@ -37,6 +39,20 @@ func main() {
 			Aliases: []string{"s"},
 			Usage:   "serching in directody with reverse index",
 			Action:  searchFunc,
+			Flags: []cli.Flag{
+				&cli.StringFlag{
+					Name:     "index",
+					Aliases:  []string{"i"},
+					Required: true,
+					Usage:    "path to reverse index",
+				},
+				&cli.StringFlag{
+					Name:     "interface",
+					Aliases:  []string{"ifc"},
+					Required: true,
+					Usage:    "interface for listening",
+				},
+			},
 		},
 	}
 
@@ -48,7 +64,7 @@ func main() {
 
 func indexFunc(c *cli.Context) error {
 
-	path := c.Args().Get(0)
+	path := c.String("path")
 
 	if len(path) == 0 {
 		log.Fatal(errors.New("Path to folder not found"))
@@ -69,8 +85,8 @@ func indexFunc(c *cli.Context) error {
 
 func searchFunc(c *cli.Context) error {
 
-	indexName := c.Args().Get(0)
-	interfaceListen := c.Args().Get(1)
+	indexName := c.String("index")
+	interfaceListen := c.String("interface")
 
 	index, err := index.ReadIndexJSON(indexName)
 	if err != nil {
