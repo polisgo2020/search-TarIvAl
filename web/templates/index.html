@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Search</title>
+</head>
+<body>
+    <div class="wrapper">
+        <form action="" method="get">
+            <input type="text" name="query" id="" value="{{.Query}}" required>
+            <button type="submit"">Поиск</button>
+        </form>
+        <div class="results">
+            {{.Results}}
+        </div>
+    </div>
+    <style>
+        body {
+            padding: 0;
+            margin: 0;
+        }
+        .wrapper{
+            margin: 0 auto;
+            width: 90%;
+            max-width: 300px;
+            min-height: 100vh;
+            
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            justify-content: center;
+        }
+        form {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+        input[type="text"] {
+            width: 70%;
+            margin-right: 20px;
+        }
+        button {
+            width: 20%;
+        }
+        .results {
+            padding: 10px;
+        }
+    </style>
+</body>
+</html>

@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"text/template"
 
 	"github.com/polisgo2020/search-tarival/index"
 	"github.com/urfave/cli/v2"
@@ -47,8 +48,8 @@ func main() {
 					Usage:    "path to reverse index",
 				},
 				&cli.StringFlag{
-					Name:     "interface",
-					Aliases:  []string{"ifc"},
+					Name:     "listen",
+					Aliases:  []string{"l"},
 					Required: true,
 					Usage:    "interface for listening",
 				},
@@ -86,15 +87,16 @@ func indexFunc(c *cli.Context) error {
 func searchFunc(c *cli.Context) error {
 
 	indexName := c.String("index")
-	interfaceListen := c.String("interface")
+	interfaceListen := c.String("listen")
 
 	index, err := index.ReadIndexJSON(indexName)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		handleSearch(w, r, index)
+	http.HandleFunc("/", handleSearch)
+	http.HandleFunc("/result", func(w http.ResponseWriter, r *http.Request) {
+		handleResult(w, r, index)
 	})
 
 	fmt.Println("Server started to listen at intterface ", interfaceListen)
@@ -107,24 +109,49 @@ func searchFunc(c *cli.Context) error {
 	return nil
 }
 
-func handleSearch(w http.ResponseWriter, r *http.Request, Index index.ReverseIndex) {
+func handleSearch(w http.ResponseWriter, r *http.Request) {
 
-	searchPhrase := r.URL.Query().Get("searchPhrase")
+	query := r.FormValue("query")
 
-	fmt.Printf("Get search phrase: %v\n", searchPhrase)
+	if len(query) == 0 {
+		markup, _ := ioutil.ReadFile("web/templates/index.html")
+		fmt.Fprintln(w, string(markup))
+	} else {
+		http.Redirect(w, r, "/result?query="+query, http.StatusFound)
+	}
+}
 
-	if len(searchPhrase) == 0 {
-		fmt.Fprintln(w, "Search phrase not found")
+func handleResult(w http.ResponseWriter, r *http.Request, Index index.ReverseIndex) {
+
+	query := r.FormValue("query")
+
+	fmt.Printf("Get search phrase: %v\n", query)
+
+	if len(query) == 0 {
+		fmt.Fprintln(w, "Search phrase not found (r)")
 		return
 	}
 
-	searchResult, err := Index.Searching(searchPhrase)
+	searchResult, err := Index.Searching(query)
 	if err != nil {
 		fmt.Fprintln(w, err.Error())
 		return
 	}
 
+	results := ""
+
 	for i, result := range searchResult {
-		fmt.Fprintf(w, "<p>%v) %v</p>\n", i+1, result)
+		results += fmt.Sprintf("<p>%v) %v</p>\n", i+1, result)
 	}
+	tmp, _ := template.ParseFiles("web/templates/index.html")
+
+	req := struct {
+		Results string
+		Query   string
+	}{
+		Results: results,
+		Query:   query,
+	}
+
+	tmp.Execute(w, req)
 }
