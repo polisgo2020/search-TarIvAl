@@ -9,8 +9,10 @@ import (
 	"net/http"
 	"os"
 	"text/template"
+	"time"
 
 	"github.com/polisgo2020/search-tarival/index"
+	"github.com/polisgo2020/search-tarival/web"
 	"github.com/urfave/cli/v2"
 )
 
@@ -87,50 +89,36 @@ func indexFunc(c *cli.Context) error {
 func searchFunc(c *cli.Context) error {
 
 	indexName := c.String("index")
-	interfaceListen := c.String("listen")
+	listen := c.String("listen")
 
-	index, err := index.ReadIndexJSON(indexName)
+	Index, err := index.ReadIndexJSON(indexName)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	http.HandleFunc("/", handleSearch)
-	http.HandleFunc("/result", func(w http.ResponseWriter, r *http.Request) {
-		handleResult(w, r, index)
-	})
-
-	fmt.Println("Server started to listen at intterface ", interfaceListen)
-
-	err = http.ListenAndServe(interfaceListen, nil)
-	if err != nil {
-		log.Fatal(err)
+	sliceHandleObj := []web.HandleObject{
+		web.HandleObject{
+			Address: "/",
+			Func:    handleSearch,
+		},
+		web.HandleObject{
+			Address:   "/result",
+			FuncIndex: handleResult,
+			Index:     Index,
+		},
 	}
+
+	web.ServerStart(listen, 10*time.Second, sliceHandleObj)
 
 	return nil
 }
 
-func handleSearch(w http.ResponseWriter, r *http.Request) {
-
-	query := r.FormValue("query")
-
-	if len(query) == 0 {
-		markup, _ := ioutil.ReadFile("web/templates/index.html")
-		fmt.Fprintln(w, string(markup))
-	} else {
-		http.Redirect(w, r, "/result?query="+query, http.StatusFound)
-	}
-}
-
 func handleResult(w http.ResponseWriter, r *http.Request, Index index.ReverseIndex) {
-
 	query := r.FormValue("query")
 
 	fmt.Printf("Get search phrase: %v\n", query)
 
-	if len(query) == 0 {
-		fmt.Fprintln(w, "Search phrase not found (r)")
-		return
-	}
+	var results string
 
 	searchResult, err := Index.Searching(query)
 	if err != nil {
@@ -138,14 +126,21 @@ func handleResult(w http.ResponseWriter, r *http.Request, Index index.ReverseInd
 		return
 	}
 
-	results := ""
-
-	for i, result := range searchResult {
-		results += fmt.Sprintf("<p>%v) %v</p>\n", i+1, result)
+	if len(searchResult) == 0 {
+		results = "Not found any result with your request"
+	} else {
+		for i, result := range searchResult {
+			results += fmt.Sprintf("<p>%v) %v</p>\n", i+1, result)
+		}
 	}
-	tmp, _ := template.ParseFiles("web/templates/index.html")
 
-	req := struct {
+	tmp, err := template.ParseFiles("web/templates/result.html")
+	if err != nil {
+		fmt.Fprintln(w, err.Error())
+		return
+	}
+
+	tmpData := struct {
 		Results string
 		Query   string
 	}{
@@ -153,5 +148,20 @@ func handleResult(w http.ResponseWriter, r *http.Request, Index index.ReverseInd
 		Query:   query,
 	}
 
-	tmp.Execute(w, req)
+	err = tmp.Execute(w, tmpData)
+	if err != nil {
+		fmt.Fprintln(w, err.Error())
+		return
+	}
+}
+
+func handleSearch(w http.ResponseWriter, r *http.Request) {
+	query := r.FormValue("query")
+
+	if len(query) == 0 {
+		markup, _ := template.ParseFiles("web/templates/index.html")
+		markup.Execute(w, struct{}{})
+	} else {
+		http.Redirect(w, r, "/result?query="+query, http.StatusFound)
+	}
 }
