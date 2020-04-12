@@ -3,12 +3,9 @@ package main
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io/ioutil"
 	"log"
-	"net/http"
 	"os"
-	"text/template"
 	"time"
 
 	"github.com/polisgo2020/search-tarival/index"
@@ -87,7 +84,6 @@ func indexFunc(c *cli.Context) error {
 }
 
 func searchFunc(c *cli.Context) error {
-
 	indexName := c.String("index")
 	listen := c.String("listen")
 
@@ -96,72 +92,22 @@ func searchFunc(c *cli.Context) error {
 		log.Fatal(err)
 	}
 
-	sliceHandleObj := []web.HandleObject{
+	handleObjs := []web.HandleObject{
 		web.HandleObject{
-			Address: "/",
-			Func:    handleSearch,
+			Address:   "/",
+			Tmp:       "web/templates/index.html",
+			WithIndex: false,
 		},
 		web.HandleObject{
 			Address:   "/result",
-			FuncIndex: handleResult,
+			Tmp:       "web/templates/result.html",
+			WithIndex: true,
 			Index:     Index,
 		},
 	}
 
-	web.ServerStart(listen, 10*time.Second, sliceHandleObj)
-
+	if err = web.ServerStart(listen, 10*time.Second, handleObjs); err != nil {
+		log.Fatal(err)
+	}
 	return nil
-}
-
-func handleResult(w http.ResponseWriter, r *http.Request, Index index.ReverseIndex) {
-	query := r.FormValue("query")
-
-	fmt.Printf("Get search phrase: %v\n", query)
-
-	var results string
-
-	searchResult, err := Index.Searching(query)
-	if err != nil {
-		fmt.Fprintln(w, err.Error())
-		return
-	}
-
-	if len(searchResult) == 0 {
-		results = "Not found any result with your request"
-	} else {
-		for i, result := range searchResult {
-			results += fmt.Sprintf("<p>%v) %v</p>\n", i+1, result)
-		}
-	}
-
-	tmp, err := template.ParseFiles("web/templates/result.html")
-	if err != nil {
-		fmt.Fprintln(w, err.Error())
-		return
-	}
-
-	tmpData := struct {
-		Results string
-		Query   string
-	}{
-		Results: results,
-		Query:   query,
-	}
-
-	err = tmp.Execute(w, tmpData)
-	if err != nil {
-		fmt.Fprintln(w, err.Error())
-		return
-	}
-}
-
-func handleSearch(w http.ResponseWriter, r *http.Request) {
-	query := r.FormValue("query")
-
-	if len(query) == 0 {
-		markup, _ := template.ParseFiles("web/templates/index.html")
-		markup.Execute(w, struct{}{})
-	} else {
-		http.Redirect(w, r, "/result?query="+query, http.StatusFound)
-	}
 }
