@@ -3,17 +3,31 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/ioutil"
-	"log"
 	"os"
 	"time"
 
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
+
+	"github.com/polisgo2020/search-tarival/config"
 	"github.com/polisgo2020/search-tarival/index"
 	"github.com/polisgo2020/search-tarival/web"
 	"github.com/urfave/cli/v2"
 )
 
+var cfg config.Config
+
 func main() {
+	cfg = config.Load()
+	logLevel, err := zerolog.ParseLevel(cfg.LogLevel)
+	if err != nil {
+		log.Fatal().Err(err).Msgf("Can't parse loglevel")
+	}
+	zerolog.SetGlobalLevel(logLevel)
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
+
 	app := &cli.App{
 		Name:  "Searching and indexing",
 		Usage: "make reverse index and search with it",
@@ -46,19 +60,13 @@ func main() {
 					Required: true,
 					Usage:    "path to reverse index",
 				},
-				&cli.StringFlag{
-					Name:     "listen",
-					Aliases:  []string{"l"},
-					Required: true,
-					Usage:    "interface for listening",
-				},
 			},
 		},
 	}
 
-	err := app.Run(os.Args)
+	err = app.Run(os.Args)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal().Err(err)
 	}
 }
 
@@ -67,29 +75,29 @@ func indexFunc(c *cli.Context) error {
 	path := c.String("path")
 
 	if len(path) == 0 {
-		log.Fatal(errors.New("Path to folder not found"))
+		log.Fatal().Err(errors.New("Path to folder not found"))
 	}
 	index, err := index.IndexingFolder(path)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal().Err(err)
 	}
 	output, err := json.Marshal(index)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal().Err(err)
 	}
 	if err := ioutil.WriteFile("index.json", output, 0666); err != nil {
-		log.Fatal(err)
+		log.Fatal().Err(err)
 	}
 	return nil
 }
 
 func searchFunc(c *cli.Context) error {
+
 	indexName := c.String("index")
-	listen := c.String("listen")
 
 	Index, err := index.ReadIndexJSON(indexName)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal().Err(err)
 	}
 
 	handleObjs := []web.HandleObject{
@@ -105,9 +113,9 @@ func searchFunc(c *cli.Context) error {
 			Index:     Index,
 		},
 	}
-
-	if err = web.ServerStart(listen, 10*time.Second, handleObjs); err != nil {
-		log.Fatal(err)
+	fmt.Println(cfg.Listen)
+	if err = web.ServerStart(cfg.Listen, 10*time.Second, handleObjs); err != nil {
+		log.Fatal().Err(err)
 	}
 	return nil
 }

@@ -4,8 +4,12 @@ import (
 	"fmt"
 	"html"
 	"net/http"
+	"os"
 	"text/template"
 	"time"
+
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 
 	"github.com/polisgo2020/search-tarival/index"
 )
@@ -20,6 +24,8 @@ type HandleObject struct {
 
 // ServerStart is start the server at handleObjs addresses, handle functions and index params
 func ServerStart(listen string, timeout time.Duration, handleObjs []HandleObject) error {
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
+
 	mux := http.NewServeMux()
 
 	server := http.Server{
@@ -45,21 +51,24 @@ func ServerStart(listen string, timeout time.Duration, handleObjs []HandleObject
 		}
 	}
 
-	fmt.Println("Server started to listen at interface ", listen)
+	log.Info().
+		Str("Interface", listen).
+		Msg("Server started to listen at interface ")
 
 	return server.ListenAndServe()
 }
 
 func handleResult(w http.ResponseWriter, r *http.Request, tmp *template.Template, Index index.ReverseIndex) {
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 	query := html.EscapeString(r.FormValue("query"))
 
-	fmt.Printf("Get search phrase: %v\n", query)
+	log.Info().Str("Get search phrase", query)
 
 	var results string
 
 	searchResult, err := Index.Searching(query)
 	if err != nil {
-		fmt.Fprintln(w, err.Error())
+		log.Error().Err(err)
 		return
 	}
 
@@ -81,9 +90,7 @@ func handleResult(w http.ResponseWriter, r *http.Request, tmp *template.Template
 
 	err = tmp.Execute(w, tmpData)
 	if err != nil {
-		fmt.Println(err)
-		fmt.Fprintln(w, err.Error())
-		return
+		log.Error().Err(err)
 	}
 }
 
@@ -93,8 +100,7 @@ func handleSearch(w http.ResponseWriter, r *http.Request, tmp *template.Template
 	if len(query) == 0 {
 		err := tmp.Execute(w, struct{}{})
 		if err != nil {
-			fmt.Println(err)
-			fmt.Fprintln(w, err.Error())
+			log.Error().Err(err)
 			return
 		}
 	} else {
