@@ -4,11 +4,9 @@ import (
 	"fmt"
 	"html"
 	"net/http"
-	"os"
 	"text/template"
 	"time"
 
-	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
 	"github.com/polisgo2020/search-tarival/index"
@@ -24,13 +22,13 @@ type HandleObject struct {
 
 // ServerStart is start the server at handleObjs addresses, handle functions and index params
 func ServerStart(listen string, timeout time.Duration, handleObjs []HandleObject) error {
-	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
-
 	mux := http.NewServeMux()
+
+	handler := logMiddleware(mux)
 
 	server := http.Server{
 		Addr:         listen,
-		Handler:      mux,
+		Handler:      handler,
 		ReadTimeout:  timeout,
 		WriteTimeout: timeout,
 	}
@@ -59,16 +57,27 @@ func ServerStart(listen string, timeout time.Duration, handleObjs []HandleObject
 }
 
 func handleResult(w http.ResponseWriter, r *http.Request, tmp *template.Template, Index index.ReverseIndex) {
-	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 	query := html.EscapeString(r.FormValue("query"))
 
 	log.Info().Str("Get search phrase", query)
 
 	var results string
 
+	tmpData := struct {
+		Results string
+		Query   string
+	}{
+		Results: "",
+		Query:   query,
+	}
+
 	searchResult, err := Index.Searching(query)
 	if err != nil {
 		log.Error().Err(err)
+		err = tmp.Execute(w, tmpData)
+		if err != nil {
+			log.Error().Err(err)
+		}
 		return
 	}
 
@@ -80,13 +89,7 @@ func handleResult(w http.ResponseWriter, r *http.Request, tmp *template.Template
 		}
 	}
 
-	tmpData := struct {
-		Results string
-		Query   string
-	}{
-		Results: results,
-		Query:   query,
-	}
+	tmpData.Results = results
 
 	err = tmp.Execute(w, tmpData)
 	if err != nil {
@@ -106,4 +109,17 @@ func handleSearch(w http.ResponseWriter, r *http.Request, tmp *template.Template
 	} else {
 		http.Redirect(w, r, "/result?query="+query, http.StatusFound)
 	}
+}
+
+func logMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(w, r)
+		log.Debug().
+			Str("method", r.Method).
+			Str("remote", r.RemoteAddr).
+			Str("path", r.URL.Path).
+			Msgf("Called url %s", r.URL.Path)
+		log.Info().
+			Str("query", r.FormValue("query"))
+	})
 }

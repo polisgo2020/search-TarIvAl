@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io/ioutil"
 	"os"
 	"time"
@@ -20,13 +19,13 @@ import (
 var cfg config.Config
 
 func main() {
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 	cfg = config.Load()
 	logLevel, err := zerolog.ParseLevel(cfg.LogLevel)
 	if err != nil {
-		log.Fatal().Err(err).Msgf("Can't parse loglevel")
+		log.Fatal().Err(err).Str("log level", cfg.LogLevel)
 	}
 	zerolog.SetGlobalLevel(logLevel)
-	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 
 	app := &cli.App{
 		Name:  "Searching and indexing",
@@ -113,7 +112,7 @@ func searchFunc(c *cli.Context) error {
 			Index:     Index,
 		},
 	}
-	fmt.Println(cfg.Listen)
+
 	if err = web.ServerStart(cfg.Listen, 10*time.Second, handleObjs); err != nil {
 		log.Fatal().Err(err)
 	}
