@@ -23,7 +23,10 @@ func main() {
 	cfg = config.Load()
 	logLevel, err := zerolog.ParseLevel(cfg.LogLevel)
 	if err != nil {
-		log.Fatal().Err(err).Str("log level", cfg.LogLevel)
+		log.Fatal().
+			Err(err).
+			Str("log level", cfg.LogLevel).
+			Msg("")
 	}
 	zerolog.SetGlobalLevel(logLevel)
 
@@ -65,7 +68,9 @@ func main() {
 
 	err = app.Run(os.Args)
 	if err != nil {
-		log.Fatal().Err(err)
+		log.Fatal().
+			Err(err).
+			Msg("")
 	}
 }
 
@@ -74,18 +79,26 @@ func indexFunc(c *cli.Context) error {
 	path := c.String("path")
 
 	if len(path) == 0 {
-		log.Fatal().Err(errors.New("Path to folder not found"))
+		log.Fatal().
+			Err(errors.New("Path to folder not found")).
+			Msg("")
 	}
 	index, err := index.IndexingFolder(path)
 	if err != nil {
-		log.Fatal().Err(err)
+		log.Fatal().
+			Err(err).
+			Msg("")
 	}
 	output, err := json.Marshal(index)
 	if err != nil {
-		log.Fatal().Err(err)
+		log.Fatal().
+			Err(err).
+			Msg("")
 	}
 	if err := ioutil.WriteFile("index.json", output, 0666); err != nil {
-		log.Fatal().Err(err)
+		log.Fatal().
+			Err(err).
+			Msg("")
 	}
 	return nil
 }
@@ -96,7 +109,9 @@ func searchFunc(c *cli.Context) error {
 
 	Index, err := index.ReadIndexJSON(indexName)
 	if err != nil {
-		log.Fatal().Err(err)
+		log.Fatal().
+			Err(err).
+			Msg("")
 	}
 
 	handleObjs := []web.HandleObject{
@@ -114,7 +129,9 @@ func searchFunc(c *cli.Context) error {
 	}
 
 	if err = web.ServerStart(cfg.Listen, 10*time.Second, handleObjs); err != nil {
-		log.Fatal().Err(err)
+		log.Fatal().
+			Err(err).
+			Msg("")
 	}
 	return nil
 }

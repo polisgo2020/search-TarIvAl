@@ -59,7 +59,7 @@ func ServerStart(listen string, timeout time.Duration, handleObjs []HandleObject
 func handleResult(w http.ResponseWriter, r *http.Request, tmp *template.Template, Index index.ReverseIndex) {
 	query := html.EscapeString(r.FormValue("query"))
 
-	log.Info().Str("Get search phrase", query)
+	log.Info().Str("Get search phrase", query).Msg("Get query")
 
 	var results string
 
@@ -73,10 +73,10 @@ func handleResult(w http.ResponseWriter, r *http.Request, tmp *template.Template
 
 	searchResult, err := Index.Searching(query)
 	if err != nil {
-		log.Error().Err(err)
+		log.Error().Err(err).Msg("Searching err")
 		err = tmp.Execute(w, tmpData)
 		if err != nil {
-			log.Error().Err(err)
+			log.Error().Err(err).Msg("Execute html template err")
 		}
 		return
 	}
@@ -93,7 +93,7 @@ func handleResult(w http.ResponseWriter, r *http.Request, tmp *template.Template
 
 	err = tmp.Execute(w, tmpData)
 	if err != nil {
-		log.Error().Err(err)
+		log.Error().Err(err).Msg("Execute html template err")
 	}
 }
 
@@ -103,7 +103,7 @@ func handleSearch(w http.ResponseWriter, r *http.Request, tmp *template.Template
 	if len(query) == 0 {
 		err := tmp.Execute(w, struct{}{})
 		if err != nil {
-			log.Error().Err(err)
+			log.Error().Err(err).Msg("Execute html template err")
 			return
 		}
 	} else {
@@ -117,9 +117,9 @@ func logMiddleware(next http.Handler) http.Handler {
 		log.Debug().
 			Str("method", r.Method).
 			Str("remote", r.RemoteAddr).
-			Str("path", r.URL.Path).
 			Msgf("Called url %s", r.URL.Path)
 		log.Info().
-			Str("query", r.FormValue("query"))
+			Str("query", r.FormValue("query")).
+			Msg("Get request")
 	})
 }
