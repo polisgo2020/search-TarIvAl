@@ -1,7 +1,7 @@
 package config
 
 import (
-	"fmt"
+	"log"
 
 	"github.com/caarlos0/env"
 )
@@ -17,7 +17,7 @@ func Load() Config {
 	cfg := Config{}
 	err := env.Parse(&cfg)
 	if err != nil {
-		fmt.Printf("%+v\n", err)
+		log.Fatal(err)
 	}
 	return cfg
 }
