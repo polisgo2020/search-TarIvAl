@@ -3,17 +3,33 @@ package main
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io/ioutil"
-	"log"
-	"net/http"
 	"os"
+	"time"
 
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
+
+	"github.com/polisgo2020/search-tarival/config"
 	"github.com/polisgo2020/search-tarival/index"
+	"github.com/polisgo2020/search-tarival/web"
 	"github.com/urfave/cli/v2"
 )
 
+var cfg config.Config
+
 func main() {
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
+	cfg = config.Load()
+	logLevel, err := zerolog.ParseLevel(cfg.LogLevel)
+	if err != nil {
+		log.Fatal().
+			Err(err).
+			Str("log level", cfg.LogLevel).
+			Msg("")
+	}
+	zerolog.SetGlobalLevel(logLevel)
+
 	app := &cli.App{
 		Name:  "Searching and indexing",
 		Usage: "make reverse index and search with it",
@@ -46,19 +62,15 @@ func main() {
 					Required: true,
 					Usage:    "path to reverse index",
 				},
-				&cli.StringFlag{
-					Name:     "interface",
-					Aliases:  []string{"ifc"},
-					Required: true,
-					Usage:    "interface for listening",
-				},
 			},
 		},
 	}
 
-	err := app.Run(os.Args)
+	err = app.Run(os.Args)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal().
+			Err(err).
+			Msg("")
 	}
 }
 
@@ -67,18 +79,26 @@ func indexFunc(c *cli.Context) error {
 	path := c.String("path")
 
 	if len(path) == 0 {
-		log.Fatal(errors.New("Path to folder not found"))
+		log.Fatal().
+			Err(errors.New("Path to folder not found")).
+			Msg("")
 	}
 	index, err := index.IndexingFolder(path)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal().
+			Err(err).
+			Msg("")
 	}
 	output, err := json.Marshal(index)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal().
+			Err(err).
+			Msg("")
 	}
 	if err := ioutil.WriteFile("index.json", output, 0666); err != nil {
-		log.Fatal(err)
+		log.Fatal().
+			Err(err).
+			Msg("")
 	}
 	return nil
 }
@@ -86,45 +106,32 @@ func indexFunc(c *cli.Context) error {
 func searchFunc(c *cli.Context) error {
 
 	indexName := c.String("index")
-	interfaceListen := c.String("interface")
 
-	index, err := index.ReadIndexJSON(indexName)
+	Index, err := index.ReadIndexJSON(indexName)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal().
+			Err(err).
+			Msg("")
 	}
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		handleSearch(w, r, index)
-	})
-
-	fmt.Println("Server started to listen at intterface ", interfaceListen)
-
-	err = http.ListenAndServe(interfaceListen, nil)
-	if err != nil {
-		log.Fatal(err)
+	handleObjs := []web.HandleObject{
+		web.HandleObject{
+			Address:   "/",
+			Tmp:       "web/templates/index.html",
+			WithIndex: false,
+		},
+		web.HandleObject{
+			Address:   "/result",
+			Tmp:       "web/templates/result.html",
+			WithIndex: true,
+			Index:     Index,
+		},
 	}
 
+	if err = web.ServerStart(cfg.Listen, 10*time.Second, handleObjs); err != nil {
+		log.Fatal().
+			Err(err).
+			Msg("")
+	}
 	return nil
-}
-
-func handleSearch(w http.ResponseWriter, r *http.Request, Index index.ReverseIndex) {
-
-	searchPhrase := r.URL.Query().Get("searchPhrase")
-
-	fmt.Printf("Get search phrase: %v\n", searchPhrase)
-
-	if len(searchPhrase) == 0 {
-		fmt.Fprintln(w, "Search phrase not found")
-		return
-	}
-
-	searchResult, err := Index.Searching(searchPhrase)
-	if err != nil {
-		fmt.Fprintln(w, err.Error())
-		return
-	}
-
-	for i, result := range searchResult {
-		fmt.Fprintf(w, "<p>%v) %v</p>\n", i+1, result)
-	}
 }
