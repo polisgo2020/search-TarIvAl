@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"io/ioutil"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/polisgo2020/search-tarival/config"
 	"github.com/polisgo2020/search-tarival/index"
+	"github.com/polisgo2020/search-tarival/model"
 	"github.com/polisgo2020/search-tarival/web"
 	"github.com/urfave/cli/v2"
 )
@@ -40,13 +42,24 @@ func main() {
 			Name:    "index",
 			Aliases: []string{"i"},
 			Usage:   "make a reverse index for directiory",
-			Action:  indexFunc,
 			Flags: []cli.Flag{
 				&cli.StringFlag{
 					Name:     "path",
 					Aliases:  []string{"p"},
 					Required: true,
 					Usage:    "path to directory",
+				},
+			},
+			Subcommands: []*cli.Command{
+				{
+					Name:   "json",
+					Usage:  "save index to json",
+					Action: indexJSON,
+				},
+				{
+					Name:   "db",
+					Usage:  "save index to PostgeSQL darabase",
+					Action: indexDB,
 				},
 			},
 		},
@@ -74,10 +87,7 @@ func main() {
 	}
 }
 
-func indexFunc(c *cli.Context) error {
-
-	path := c.String("path")
-
+func indexing(path string) index.ReverseIndex {
 	if len(path) == 0 {
 		log.Fatal().
 			Err(errors.New("Path to folder not found")).
@@ -89,6 +99,12 @@ func indexFunc(c *cli.Context) error {
 			Err(err).
 			Msg("")
 	}
+	return index
+}
+
+func indexJSON(c *cli.Context) error {
+	index := indexing(c.String("path"))
+
 	output, err := json.Marshal(index)
 	if err != nil {
 		log.Fatal().
@@ -100,6 +116,28 @@ func indexFunc(c *cli.Context) error {
 			Err(err).
 			Msg("")
 	}
+	return nil
+}
+
+func indexDB(c *cli.Context) error {
+	index := indexing(c.String("path"))
+
+	db, err := sql.Open("postgres", cfg.PgSQL)
+	if err != nil {
+		log.Fatal().
+			Err(err).
+			Msg("")
+	}
+	defer db.Close()
+
+	err = db.Ping()
+	if err != nil {
+		log.Fatal().
+			Err(err).
+			Msg("")
+	}
+
+	model.SaveDB(db, index)
 	return nil
 }
 
