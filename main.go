@@ -67,13 +67,24 @@ func main() {
 			Name:    "search",
 			Aliases: []string{"s"},
 			Usage:   "serching in directody with reverse index",
-			Action:  searchFunc,
-			Flags: []cli.Flag{
-				&cli.StringFlag{
-					Name:     "index",
-					Aliases:  []string{"i"},
-					Required: true,
-					Usage:    "path to reverse index",
+			Subcommands: []*cli.Command{
+				{
+					Name:   "json",
+					Usage:  "load index from json",
+					Action: searchJSON,
+					Flags: []cli.Flag{
+						&cli.StringFlag{
+							Name:     "index",
+							Aliases:  []string{"i"},
+							Required: true,
+							Usage:    "path to reverse index",
+						},
+					},
+				},
+				{
+					Name:   "db",
+					Usage:  "load index from PostgeSQL darabase",
+					Action: searchDB,
 				},
 			},
 		},
@@ -141,7 +152,48 @@ func indexDB(c *cli.Context) error {
 	return nil
 }
 
-func searchFunc(c *cli.Context) error {
+func searchDB(c *cli.Context) error {
+
+	db, err := sql.Open("postgres", cfg.PgSQL)
+	if err != nil {
+		log.Fatal().
+			Err(err).
+			Msg("")
+	}
+	defer db.Close()
+
+	err = db.Ping()
+	if err != nil {
+		log.Fatal().
+			Err(err).
+			Msg("")
+	}
+
+	Index := model.LoadDB(db)
+
+	handleObjs := []web.HandleObject{
+		web.HandleObject{
+			Address:   "/",
+			Tmp:       "web/templates/index.html",
+			WithIndex: false,
+		},
+		web.HandleObject{
+			Address:   "/result",
+			Tmp:       "web/templates/result.html",
+			WithIndex: true,
+			Index:     Index,
+		},
+	}
+
+	if err = web.ServerStart(cfg.Listen, 10*time.Second, handleObjs); err != nil {
+		log.Fatal().
+			Err(err).
+			Msg("")
+	}
+	return nil
+}
+
+func searchJSON(c *cli.Context) error {
 
 	indexName := c.String("index")
 

@@ -33,7 +33,7 @@ func (index ReverseIndex) addFileInIndex(fileName string, fileText string, mu *s
 	mu.Lock()
 	for _, word := range tokens {
 		if sliceIndex, ok := index[word]; ok {
-			if j := hasFileInIndex(sliceIndex, fileName); j != -1 {
+			if j := HasFileInIndex(sliceIndex, fileName); j != -1 {
 				index[word][j].Positions = append(index[word][j].Positions, wordPosition)
 				wordPosition++
 				continue
@@ -123,7 +123,8 @@ func IndexingFolder(path string) (ReverseIndex, error) {
 	return index, nil
 }
 
-func hasFileInIndex(sliceIndex []WordIndex, fileName string) int {
+// HasFileInIndex find in slice WordIndexs file and returning index for slice item with file
+func HasFileInIndex(sliceIndex []WordIndex, fileName string) int {
 	for i, indexWord := range sliceIndex {
 		if indexWord.File == fileName {
 			return i

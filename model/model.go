@@ -2,6 +2,7 @@ package model
 
 import (
 	"database/sql"
+	"fmt"
 
 	_ "github.com/lib/pq"
 	"github.com/polisgo2020/search-tarival/index"
@@ -54,4 +55,64 @@ func SaveDB(db *sql.DB, index index.ReverseIndex) {
 			}
 		}
 	}
+}
+
+// LoadDB load index from PostgreSQL database
+func LoadDB(db *sql.DB) index.ReverseIndex {
+	ind := make(index.ReverseIndex)
+	words := loadTwoColumnTable(db, "words")
+	files := loadTwoColumnTable(db, "files")
+
+	rows, err := db.Query("SELECT * FROM positions")
+	if err != nil {
+		log.Error().Err(err).Msg("SELECT * FROM positions err")
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var wID, fID, position int
+		err = rows.Scan(&wID, &fID, &position)
+		if err != nil {
+			log.Error().Err(err).Msg("Rows scan err")
+		}
+
+		if i := index.HasFileInIndex(ind[words[wID]], files[fID]); i != -1 {
+			ind[words[wID]][i].Positions = append(ind[words[wID]][i].Positions, position)
+		} else {
+			item := index.WordIndex{
+				File:      files[fID],
+				Positions: []int{position},
+			}
+			ind[words[wID]] = append(ind[words[wID]], item)
+		}
+	}
+
+	if err = rows.Err(); err != nil {
+		log.Error().Err(err).Msg("Rows err")
+	}
+
+	return ind
+}
+
+func loadTwoColumnTable(db *sql.DB, tableName string) map[int]string {
+	query := fmt.Sprintf("SELECT * FROM %s", tableName)
+	rows, err := db.Query(query)
+	if err != nil {
+		log.Error().Err(err).Msgf("SELECT * FROM %s err", tableName)
+	}
+	defer rows.Close()
+	result := make(map[int]string)
+	for rows.Next() {
+		var id int
+		var str string
+		err = rows.Scan(&id, &str)
+		if err != nil {
+			log.Error().Err(err).Msg("Rows scan err")
+		}
+		result[id] = str
+	}
+
+	if err = rows.Err(); err != nil {
+		log.Error().Err(err).Msg("Rows err")
+	}
+	return result
 }
