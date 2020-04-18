@@ -1,6 +1,7 @@
 package index
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"io/ioutil"
@@ -11,6 +12,8 @@ import (
 	"unicode"
 
 	"github.com/kljensen/snowball/english"
+	_ "github.com/lib/pq"
+	"github.com/rs/zerolog/log"
 	"github.com/zoomio/stopwords"
 )
 
@@ -206,7 +209,6 @@ func (index ReverseIndex) Searching(searchPhrase string) ([]string, error) {
 					result.words = append(result.words, words...)
 					result.count += len(indexFile.Positions)
 					results[indexFile.File] = result
-
 				}
 			}
 		}
@@ -312,4 +314,90 @@ func convertMapToSlice(mapResults map[string]searchResult) []searchResult {
 		})
 	}
 	return sliceResults
+}
+
+// SearchingDB is func for search with reverse index
+func SearchingDB(db *sql.DB, searchPhrase string) ([]string, error) {
+	keywords := strings.Fields(searchPhrase)
+	keywords = HandleWords(keywords)
+
+	if len(keywords) == 0 {
+		return nil, errors.New("Search phrase doesn't contain right keywords")
+	}
+
+	results := map[string]searchResult{}
+	files := make(map[int]string)
+
+	for _, keyword := range keywords {
+		var wID int
+		switch err := db.QueryRow(`SELECT w_id FROM words WHERE word=$1`, keyword).Scan(&wID); err {
+		case sql.ErrNoRows:
+			continue
+		case nil:
+		default:
+			log.Error().Err(err).Msg("SELECT w_id FROM words WHERE word=keyword err")
+		}
+
+		rows, err := db.Query("SELECT f_id, position FROM positions WHERE w_id=$1", wID)
+		if err != nil {
+			log.Error().Err(err).Msg("SELECT f_id, position FROM positions WHERE w_id=wID err")
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var fID, position int
+			err = rows.Scan(&fID, &position)
+			if err != nil {
+				log.Error().Err(err).Msg("Rows scan err")
+			}
+
+			if file, ok := files[fID]; !ok {
+				switch err := db.QueryRow(`SELECT file FROM files WHERE f_id=$1`, fID).Scan(&file); err {
+				case sql.ErrNoRows:
+					log.Error().Err(sql.ErrNoRows).Msg("SELECT file FROM files WHERE f_id=fID err")
+				case nil:
+					files[fID] = file
+				default:
+					log.Error().Err(err).Msg("SELECT file FROM files WHERE f_id=fID err")
+				}
+			}
+
+			word := wordOnFile{
+				word: keyword,
+				position: position,
+			}
+
+			if _, ok := results[files[fID]]; !ok {
+				results[files[fID]] = searchResult{
+					count:          1,
+					uniqueKeywords: 0,
+					words:          []wordOnFile{word},
+				}
+			} else {
+				result := results[files[fID]]
+				result.words = append(result.words, word)
+				result.count++
+				results[files[fID]] = result
+			}
+		}
+	}
+
+	counterUniqueKeywords(results, keywords)
+	sortPositions(results)
+
+	for file, result := range results {
+		result.maxLengthPhrase = maxLengthSearchPhrase(result.words, keywords)
+		results[file] = result
+	}
+
+	sliceResults := convertMapToSlice(results)
+
+	sortSearchResults(sliceResults)
+
+	var searchResult []string
+
+	for _, result := range sliceResults {
+		searchResult = append(searchResult, result.file)
+	}
+
+	return searchResult, nil
 }
