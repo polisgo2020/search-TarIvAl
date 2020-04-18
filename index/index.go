@@ -214,23 +214,7 @@ func (index ReverseIndex) Searching(searchPhrase string) ([]string, error) {
 		}
 	}
 
-	counterUniqueKeywords(results, keywords)
-	sortPositions(results)
-
-	for file, result := range results {
-		result.maxLengthPhrase = maxLengthSearchPhrase(result.words, keywords)
-		results[file] = result
-	}
-
-	sliceResults := convertMapToSlice(results)
-
-	sortSearchResults(sliceResults)
-
-	var searchResult []string
-
-	for _, result := range sliceResults {
-		searchResult = append(searchResult, result.file)
-	}
+	searchResult := handleResults(results, keywords)
 
 	return searchResult, nil
 }
@@ -362,7 +346,7 @@ func SearchingDB(db *sql.DB, searchPhrase string) ([]string, error) {
 			}
 
 			word := wordOnFile{
-				word: keyword,
+				word:     keyword,
 				position: position,
 			}
 
@@ -374,13 +358,19 @@ func SearchingDB(db *sql.DB, searchPhrase string) ([]string, error) {
 				}
 			} else {
 				result := results[files[fID]]
-				result.words = append(result.words, word)
 				result.count++
+				result.words = append(result.words, word)
 				results[files[fID]] = result
 			}
 		}
 	}
 
+	searchResult := handleResults(results, keywords)
+
+	return searchResult, nil
+}
+
+func handleResults(results map[string]searchResult, keywords []string) []string {
 	counterUniqueKeywords(results, keywords)
 	sortPositions(results)
 
@@ -399,5 +389,5 @@ func SearchingDB(db *sql.DB, searchPhrase string) ([]string, error) {
 		searchResult = append(searchResult, result.file)
 	}
 
-	return searchResult, nil
+	return searchResult
 }
