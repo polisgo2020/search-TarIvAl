@@ -1,6 +1,7 @@
 package web
 
 import (
+	"database/sql"
 	"fmt"
 	"html"
 	"net/http"
@@ -12,16 +13,13 @@ import (
 	"github.com/polisgo2020/search-tarival/index"
 )
 
-// HandleObject is parameter for ServerStart
 type HandleObject struct {
-	Address   string
-	Tmp       string
-	WithIndex bool
-	Index     index.ReverseIndex
+	Index index.ReverseIndex
+	DB    *sql.DB
 }
 
-// ServerStart is start the server at handleObjs addresses, handle functions and index params
-func ServerStart(listen string, timeout time.Duration, handleObjs []HandleObject) error {
+// ServerStart is start the server at handle address, handle functions and index params
+func ServerStart(listen string, timeout time.Duration, handle HandleObject) error {
 	mux := http.NewServeMux()
 
 	handler := logMiddleware(mux)
@@ -33,21 +31,10 @@ func ServerStart(listen string, timeout time.Duration, handleObjs []HandleObject
 		WriteTimeout: timeout,
 	}
 
-	for _, handle := range handleObjs {
-		tmp, err := template.ParseFiles(handle.Tmp)
-		if err != nil {
-			return err
-		}
-		if handle.WithIndex {
-			mux.HandleFunc(handle.Address, func(w http.ResponseWriter, r *http.Request) {
-				handleResult(w, r, tmp, handle.Index)
-			})
-		} else {
-			mux.HandleFunc(handle.Address, func(w http.ResponseWriter, r *http.Request) {
-				handleSearch(w, r, tmp)
-			})
-		}
-	}
+	mux.HandleFunc("/", handleSearch)
+	mux.HandleFunc("/result", func(w http.ResponseWriter, r *http.Request) {
+		handleResult(w, r, handle)
+	})
 
 	log.Info().
 		Str("Interface", listen).
@@ -56,7 +43,11 @@ func ServerStart(listen string, timeout time.Duration, handleObjs []HandleObject
 	return server.ListenAndServe()
 }
 
-func handleResult(w http.ResponseWriter, r *http.Request, tmp *template.Template, Index index.ReverseIndex) {
+func handleResult(w http.ResponseWriter, r *http.Request, handle HandleObject) {
+	tmp, err := template.ParseFiles("web/templates/result.html")
+	if err != nil {
+		log.Error().Err(err).Msg("Parse template err")
+	}
 	query := html.EscapeString(r.FormValue("query"))
 
 	log.Info().Str("Get search phrase", query).Msg("Get query")
@@ -71,7 +62,13 @@ func handleResult(w http.ResponseWriter, r *http.Request, tmp *template.Template
 		Query:   query,
 	}
 
-	searchResult, err := Index.Searching(query)
+	var searchResult []string
+	if handle.Index != nil {
+		searchResult, err = handle.Index.Searching(query)
+	}
+	if handle.DB != nil {
+		searchResult, err = index.SearchingDB(handle.DB, query)
+	}
 	if err != nil {
 		log.Error().Err(err).Msg("Searching err")
 		err = tmp.Execute(w, tmpData)
@@ -97,7 +94,12 @@ func handleResult(w http.ResponseWriter, r *http.Request, tmp *template.Template
 	}
 }
 
-func handleSearch(w http.ResponseWriter, r *http.Request, tmp *template.Template) {
+func handleSearch(w http.ResponseWriter, r *http.Request) {
+	tmp, err := template.ParseFiles("web/templates/index.html")
+	if err != nil {
+		log.Error().Err(err).Msg("Parse template err")
+	}
+
 	query := html.EscapeString(r.FormValue("query"))
 
 	if len(query) == 0 {

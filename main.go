@@ -169,23 +169,11 @@ func searchDB(c *cli.Context) error {
 			Msg("")
 	}
 
-	Index := model.LoadDB(db)
-
-	handleObjs := []web.HandleObject{
-		web.HandleObject{
-			Address:   "/",
-			Tmp:       "web/templates/index.html",
-			WithIndex: false,
-		},
-		web.HandleObject{
-			Address:   "/result",
-			Tmp:       "web/templates/result.html",
-			WithIndex: true,
-			Index:     Index,
-		},
+	handle := web.HandleObject{
+		DB: db,
 	}
 
-	if err = web.ServerStart(cfg.Listen, 10*time.Second, handleObjs); err != nil {
+	if err = web.ServerStart(cfg.Listen, 10*time.Second, handle); err != nil {
 		log.Fatal().
 			Err(err).
 			Msg("")
@@ -204,21 +192,11 @@ func searchJSON(c *cli.Context) error {
 			Msg("")
 	}
 
-	handleObjs := []web.HandleObject{
-		web.HandleObject{
-			Address:   "/",
-			Tmp:       "web/templates/index.html",
-			WithIndex: false,
-		},
-		web.HandleObject{
-			Address:   "/result",
-			Tmp:       "web/templates/result.html",
-			WithIndex: true,
-			Index:     Index,
-		},
+	handle := web.HandleObject{
+		Index: Index,
 	}
 
-	if err = web.ServerStart(cfg.Listen, 10*time.Second, handleObjs); err != nil {
+	if err = web.ServerStart(cfg.Listen, 10*time.Second, handle); err != nil {
 		log.Fatal().
 			Err(err).
 			Msg("")
