@@ -28,30 +28,6 @@ type WordIndex struct {
 // ReverseIndex is type for storage reverse index in program
 type ReverseIndex map[string][]WordIndex
 
-func (index ReverseIndex) addFileInIndex(fileName string, fileText string, mu *sync.Mutex, wg *sync.WaitGroup) {
-	defer wg.Done()
-	words := strings.Fields(string(fileText))
-	tokens := HandleWords(words)
-	wordPosition := 0
-	mu.Lock()
-	for _, word := range tokens {
-		if sliceIndex, ok := index[word]; ok {
-			if j := HasFileInIndex(sliceIndex, fileName); j != -1 {
-				index[word][j].Positions = append(index[word][j].Positions, wordPosition)
-				wordPosition++
-				continue
-			}
-		}
-		item := WordIndex{
-			File:      fileName,
-			Positions: []int{wordPosition},
-		}
-		index[word] = append(index[word], item)
-		wordPosition++
-	}
-	mu.Unlock()
-}
-
 // ReadIndexJSON - read 'pathToIndex' file and return ReverseIndex
 func ReadIndexJSON(pathToIndex string) (ReverseIndex, error) {
 	file, err := ioutil.ReadFile(pathToIndex)
@@ -89,7 +65,58 @@ type fileData struct {
 	text []byte
 }
 
-// IndexingFolder create a file with revrse index
+func readFile(path, fileName string, ch chan<- fileData, errCh chan<- error) {
+	fileText, err := ioutil.ReadFile(path + string(os.PathSeparator) + fileName)
+	if err != nil {
+		errCh <- err
+		return
+	}
+	file := fileData{
+		name: fileName,
+		text: fileText,
+	}
+	ch <- file
+}
+
+func readDirInChan(path string, ch chan<- fileData, errCh chan<- error) (int, error) {
+	files, err := ioutil.ReadDir(path)
+	if err != nil {
+		return 0, err
+	}
+
+	files = deleteDirs(files)
+
+	for _, file := range files {
+		go readFile(path, file.Name(), ch, errCh)
+	}
+	return len(files), nil
+}
+
+func (index ReverseIndex) addFileInIndex(fileName string, fileText string, mu *sync.Mutex, wg *sync.WaitGroup) {
+	defer wg.Done()
+	words := strings.Fields(string(fileText))
+	tokens := HandleWords(words)
+	wordPosition := 0
+	mu.Lock()
+	for _, word := range tokens {
+		if sliceIndex, ok := index[word]; ok {
+			if j := HasFileInIndex(sliceIndex, fileName); j != -1 {
+				index[word][j].Positions = append(index[word][j].Positions, wordPosition)
+				wordPosition++
+				continue
+			}
+		}
+		item := WordIndex{
+			File:      fileName,
+			Positions: []int{wordPosition},
+		}
+		index[word] = append(index[word], item)
+		wordPosition++
+	}
+	mu.Unlock()
+}
+
+// IndexingFolder create a file with reverse index
 func IndexingFolder(path string) (ReverseIndex, error) {
 	files, err := ioutil.ReadDir(path)
 	if err != nil {
@@ -126,6 +153,96 @@ func IndexingFolder(path string) (ReverseIndex, error) {
 	return index, nil
 }
 
+func addFileInDB(db *sql.DB, fileName string, fileText string, mu *sync.Mutex, wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	var fID int
+
+	mu.Lock()
+	result, err := db.Exec(`SELECT f_id FROM files WHERE name_file = $1`, fileName)
+	if err != nil {
+		log.Error().Err(err).Msg("Exec SELECT f_id FROM files WHERE name_file=fileName err")
+	}
+
+	if num, _ := result.RowsAffected(); num == 0 {
+		_, err = db.Exec(`INSERT INTO files (name_file) VALUES ($1)`, fileName)
+		if err != nil {
+			log.Error().Err(err).Msg("Execute insert file name in table files err")
+		}
+	}
+
+	err = db.QueryRow(`SELECT f_id FROM files WHERE name_file=$1`, fileName).Scan(&fID)
+	if err != nil {
+		log.Error().Err(err).Msg("QueryRow SELECT f_id FROM files WHERE name_file=fileName err")
+	}
+	mu.Unlock()
+
+	tokens := HandleWords(strings.Fields(string(fileText)))
+	wordPosition := 0
+	words := make(map[string]int)
+
+	mu.Lock()
+	for _, token := range tokens {
+		if _, ok := words[token]; !ok {
+			var wID int
+			result, err := db.Exec(`SELECT w_id FROM words WHERE word=$1`, token)
+			if err != nil {
+				log.Error().Err(err).Msg("SELECT w_id FROM words WHERE word=token err")
+			}
+
+			if num, _ := result.RowsAffected(); num == 0 {
+				_, err = db.Exec(`INSERT INTO words (word) VALUES ($1)`, token)
+				if err != nil {
+					log.Error().Err(err).Msg("Execute insert word name in table words err")
+				}
+			}
+
+			err = db.QueryRow(`SELECT w_id FROM words WHERE word=$1`, token).Scan(&wID)
+			if err != nil {
+				log.Error().Err(err).Msg("SELECT w_id FROM words WHERE word=token err")
+			}
+			words[token] = wID
+		}
+
+		_, err = db.Exec(`INSERT INTO positions (w_id, f_id, position) VALUES ($1, $2, $3)`, words[token], fID, wordPosition)
+		if err != nil {
+			log.Error().Err(err).Msg("Execute insert data in table positions err")
+		}
+
+		wordPosition++
+	}
+	mu.Unlock()
+}
+
+// IndexingFolderDB save reverse index in db
+func IndexingFolderDB(db *sql.DB, path string) error {
+	ch := make(chan fileData)
+	errCh := make(chan error)
+	defer close(ch)
+	defer close(errCh)
+
+	countFiles, err := readDirInChan(path, ch, errCh)
+	if err != nil {
+		return err
+	}
+
+	mu := &sync.Mutex{}
+	wg := &sync.WaitGroup{}
+
+	for i := 0; i != countFiles; {
+		select {
+		case file := <-ch:
+			wg.Add(1)
+			go addFileInDB(db, file.name, string(file.text), mu, wg)
+			i++
+		case err := <-errCh:
+			return err
+		}
+	}
+	wg.Wait()
+	return nil
+}
+
 // HasFileInIndex find in slice WordIndexs file and returning index for slice item with file
 func HasFileInIndex(sliceIndex []WordIndex, fileName string) int {
 	for i, indexWord := range sliceIndex {
@@ -134,19 +251,6 @@ func HasFileInIndex(sliceIndex []WordIndex, fileName string) int {
 		}
 	}
 	return -1
-}
-
-func readFile(path, fileName string, ch chan<- fileData, errCh chan<- error) {
-	fileText, err := ioutil.ReadFile(path + string(os.PathSeparator) + fileName)
-	if err != nil {
-		errCh <- err
-		return
-	}
-	file := fileData{
-		name: fileName,
-		text: fileText,
-	}
-	ch <- file
 }
 
 func deleteDirs(files []os.FileInfo) []os.FileInfo {

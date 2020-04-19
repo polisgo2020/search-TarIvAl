@@ -13,7 +13,6 @@ import (
 
 	"github.com/polisgo2020/search-tarival/config"
 	"github.com/polisgo2020/search-tarival/index"
-	"github.com/polisgo2020/search-tarival/model"
 	"github.com/polisgo2020/search-tarival/web"
 	"github.com/urfave/cli/v2"
 )
@@ -131,7 +130,7 @@ func indexJSON(c *cli.Context) error {
 }
 
 func indexDB(c *cli.Context) error {
-	index := indexing(c.String("path"))
+	folder := c.String("path")
 
 	db, err := sql.Open("postgres", cfg.PgSQL)
 	if err != nil {
@@ -148,7 +147,8 @@ func indexDB(c *cli.Context) error {
 			Msg("")
 	}
 
-	model.SaveDB(db, index)
+	index.IndexingFolderDB(db, folder)
+
 	return nil
 }
 

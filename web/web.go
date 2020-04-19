@@ -13,6 +13,7 @@ import (
 	"github.com/polisgo2020/search-tarival/index"
 )
 
+// HandleObject object for send index or db in ServerStart
 type HandleObject struct {
 	Index index.ReverseIndex
 	DB    *sql.DB
