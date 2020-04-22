@@ -62,6 +62,7 @@ func HandleWords(words []string) []string {
 		if stopwords.IsStopWord(word) || word == "" {
 			continue
 		}
+		word = strings.Replace(word, "'", "", 1)
 		tokens = append(tokens, word)
 	}
 	return tokens
@@ -177,6 +178,7 @@ func addFileInDB(db *sql.DB, fileName string, fileText string) error {
 	wordPosition := 0
 	words := make(map[string]int)
 
+	var buffer [][]string
 	for _, token := range tokens {
 		if _, ok := words[token]; !ok {
 			words[token], _, err = model.CheckAndInsert(db, "words", "word", "w_id", token)
@@ -184,11 +186,11 @@ func addFileInDB(db *sql.DB, fileName string, fileText string) error {
 				return err
 			}
 		}
-
-		if err := model.InsertRow(db, "positions", []string{"w_id", "f_id", "position"}, []string{strconv.Itoa(words[token]), strconv.Itoa(fID), strconv.Itoa(wordPosition)}); err != nil {
-			return err
-		}
+		buffer = append(buffer, []string{strconv.Itoa(words[token]), strconv.Itoa(fID), strconv.Itoa(wordPosition)})
 		wordPosition++
+	}
+	if err := model.Insert(db, "positions", []string{"w_id", "f_id", "position"}, buffer); err != nil {
+		return err
 	}
 	log.Info().Str("File", fileName).Msg("File is indexed")
 	return nil

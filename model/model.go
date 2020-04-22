@@ -39,15 +39,13 @@ func CheckAndInsert(db *sql.DB, table, columnData, columnID, val string) (int, b
 	case nil:
 		return id, true, nil
 	default:
+		fmt.Println(err, id, columnID, table, columnData, val)
 		return 0, false, err
 	}
 }
 
-// InsertRow - insert 1 row in table and columns will = vals
-func InsertRow(db *sql.DB, table string, columns, vals []string) error {
-	if len(vals) != len(columns) {
-		return errors.New("length columns and values not equal")
-	}
+// Insert - insert in table valsSlice values to columns
+func Insert(db *sql.DB, table string, columns []string, valsSlice [][]string) error {
 	var columnsStr string
 	for i, column := range columns {
 		if i != 0 {
@@ -55,14 +53,24 @@ func InsertRow(db *sql.DB, table string, columns, vals []string) error {
 		}
 		columnsStr += column
 	}
-	var valsStr string
-	for i, val := range vals {
-		if i != 0 {
-			valsStr += ", "
+	var inputValues string
+	for j, vals := range valsSlice {
+		if len(vals) != len(columns) {
+			return errors.New("length columns and values not equal")
 		}
-		valsStr += val
+		if j != 0 {
+			inputValues += ", "
+		}
+		inputValues += "("
+		for i, val := range vals {
+			if i != 0 {
+				inputValues += ", "
+			}
+			inputValues += val
+		}
+		inputValues += ")"
 	}
-	query := fmt.Sprintf(`INSERT INTO %s (%s) VALUES (%s)`, table, columnsStr, valsStr)
+	query := fmt.Sprintf(`INSERT INTO %s (%s) VALUES %s`, table, columnsStr, inputValues)
 	_, err := db.Exec(query)
 	if err != nil {
 		return err
