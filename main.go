@@ -97,23 +97,21 @@ func main() {
 	}
 }
 
-func indexing(path string) index.ReverseIndex {
+func indexJSON(c *cli.Context) error {
+	path := c.String("path")
+
 	if len(path) == 0 {
 		log.Fatal().
 			Err(errors.New("Path to folder not found")).
 			Msg("")
 	}
+
 	index, err := index.IndexingFolder(path)
 	if err != nil {
 		log.Fatal().
 			Err(err).
 			Msg("")
 	}
-	return index
-}
-
-func indexJSON(c *cli.Context) error {
-	index := indexing(c.String("path"))
 
 	output, err := json.Marshal(index)
 	if err != nil {
@@ -147,8 +145,34 @@ func indexDB(c *cli.Context) error {
 			Msg("")
 	}
 
-	index.IndexingFolderDB(db, folder)
+	if err = index.IndexingFolderDB(db, folder); err != nil {
+		log.Fatal().
+			Err(err).
+			Msg("")
+	}
+	return nil
+}
 
+func searchJSON(c *cli.Context) error {
+
+	indexName := c.String("index")
+
+	Index, err := index.ReadIndexJSON(indexName)
+	if err != nil {
+		log.Fatal().
+			Err(err).
+			Msg("")
+	}
+
+	handle := web.HandleObject{
+		Index: Index,
+	}
+
+	if err = web.ServerStart(cfg.Listen, 10*time.Second, handle); err != nil {
+		log.Fatal().
+			Err(err).
+			Msg("")
+	}
 	return nil
 }
 
@@ -171,29 +195,6 @@ func searchDB(c *cli.Context) error {
 
 	handle := web.HandleObject{
 		DB: db,
-	}
-
-	if err = web.ServerStart(cfg.Listen, 10*time.Second, handle); err != nil {
-		log.Fatal().
-			Err(err).
-			Msg("")
-	}
-	return nil
-}
-
-func searchJSON(c *cli.Context) error {
-
-	indexName := c.String("index")
-
-	Index, err := index.ReadIndexJSON(indexName)
-	if err != nil {
-		log.Fatal().
-			Err(err).
-			Msg("")
-	}
-
-	handle := web.HandleObject{
-		Index: Index,
 	}
 
 	if err = web.ServerStart(cfg.Listen, 10*time.Second, handle); err != nil {

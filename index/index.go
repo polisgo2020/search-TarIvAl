@@ -7,12 +7,14 @@ import (
 	"io/ioutil"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"unicode"
 
 	"github.com/kljensen/snowball/english"
 	_ "github.com/lib/pq"
+	"github.com/polisgo2020/search-tarival/model"
 	"github.com/rs/zerolog/log"
 	"github.com/zoomio/stopwords"
 )
@@ -27,6 +29,11 @@ type WordIndex struct {
 
 // ReverseIndex is type for storage reverse index in program
 type ReverseIndex map[string][]WordIndex
+
+type fileData struct {
+	name string
+	text []byte
+}
 
 // ReadIndexJSON - read 'pathToIndex' file and return ReverseIndex
 func ReadIndexJSON(pathToIndex string) (ReverseIndex, error) {
@@ -60,11 +67,6 @@ func HandleWords(words []string) []string {
 	return tokens
 }
 
-type fileData struct {
-	name string
-	text []byte
-}
-
 func readFile(path, fileName string, ch chan<- fileData, errCh chan<- error) {
 	fileText, err := ioutil.ReadFile(path + string(os.PathSeparator) + fileName)
 	if err != nil {
@@ -78,18 +80,16 @@ func readFile(path, fileName string, ch chan<- fileData, errCh chan<- error) {
 	ch <- file
 }
 
-func readDirInChan(path string, ch chan<- fileData, errCh chan<- error) (int, error) {
-	files, err := ioutil.ReadDir(path)
-	if err != nil {
-		return 0, err
-	}
-
-	files = deleteDirs(files)
-
+func deleteDirs(files []os.FileInfo) []os.FileInfo {
+	i := 0
 	for _, file := range files {
-		go readFile(path, file.Name(), ch, errCh)
+		if !file.IsDir() {
+			files[i] = file
+			i++
+		}
 	}
-	return len(files), nil
+	files = files[:i]
+	return files
 }
 
 func (index ReverseIndex) addFileInIndex(fileName string, fileText string, mu *sync.Mutex, wg *sync.WaitGroup) {
@@ -116,30 +116,37 @@ func (index ReverseIndex) addFileInIndex(fileName string, fileText string, mu *s
 	mu.Unlock()
 }
 
-// IndexingFolder create a file with reverse index
-func IndexingFolder(path string) (ReverseIndex, error) {
+func readDirInChan(path string, ch chan<- fileData, errCh chan<- error) (int, error) {
 	files, err := ioutil.ReadDir(path)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
 
 	files = deleteDirs(files)
 
-	index := make(ReverseIndex)
-
-	ch := make(chan fileData)
-	errCh := make(chan error)
 	for _, file := range files {
 		go readFile(path, file.Name(), ch, errCh)
 	}
+	return len(files), nil
+}
 
-	mu := &sync.Mutex{}
-	wg := &sync.WaitGroup{}
-
+// IndexingFolder create a file with reverse index
+func IndexingFolder(path string) (ReverseIndex, error) {
+	ch := make(chan fileData)
+	errCh := make(chan error)
 	defer close(ch)
 	defer close(errCh)
 
-	for i := 0; i != len(files); {
+	countFiles, err := readDirInChan(path, ch, errCh)
+	if err != nil {
+		return nil, err
+	}
+
+	index := make(ReverseIndex)
+	mu := &sync.Mutex{}
+	wg := &sync.WaitGroup{}
+
+	for i := 0; i != countFiles; {
 		select {
 		case file := <-ch:
 			wg.Add(1)
@@ -153,93 +160,80 @@ func IndexingFolder(path string) (ReverseIndex, error) {
 	return index, nil
 }
 
-func addFileInDB(db *sql.DB, fileName string, fileText string, mu *sync.Mutex, wg *sync.WaitGroup) {
-	defer wg.Done()
-
+func addFileInDB(db *sql.DB, fileName string, fileText string) error {
 	var fID int
 
-	mu.Lock()
-	result, err := db.Exec(`SELECT f_id FROM files WHERE name_file = $1`, fileName)
+	fID, ok, err := model.CheckAndInsert(db, "files", "name_file", "f_id", fileName)
 	if err != nil {
-		log.Error().Err(err).Msg("Exec SELECT f_id FROM files WHERE name_file=fileName err")
+		return err
 	}
-
-	if num, _ := result.RowsAffected(); num == 0 {
-		_, err = db.Exec(`INSERT INTO files (name_file) VALUES ($1)`, fileName)
-		if err != nil {
-			log.Error().Err(err).Msg("Execute insert file name in table files err")
+	if ok {
+		if err = model.Delete(db, "positions", "f_id", strconv.Itoa(fID)); err != nil {
+			return err
 		}
 	}
-
-	err = db.QueryRow(`SELECT f_id FROM files WHERE name_file=$1`, fileName).Scan(&fID)
-	if err != nil {
-		log.Error().Err(err).Msg("QueryRow SELECT f_id FROM files WHERE name_file=fileName err")
-	}
-	mu.Unlock()
 
 	tokens := HandleWords(strings.Fields(string(fileText)))
 	wordPosition := 0
 	words := make(map[string]int)
 
-	mu.Lock()
 	for _, token := range tokens {
 		if _, ok := words[token]; !ok {
-			var wID int
-			result, err := db.Exec(`SELECT w_id FROM words WHERE word=$1`, token)
+			words[token], _, err = model.CheckAndInsert(db, "words", "word", "w_id", token)
 			if err != nil {
-				log.Error().Err(err).Msg("SELECT w_id FROM words WHERE word=token err")
+				return err
 			}
-
-			if num, _ := result.RowsAffected(); num == 0 {
-				_, err = db.Exec(`INSERT INTO words (word) VALUES ($1)`, token)
-				if err != nil {
-					log.Error().Err(err).Msg("Execute insert word name in table words err")
-				}
-			}
-
-			err = db.QueryRow(`SELECT w_id FROM words WHERE word=$1`, token).Scan(&wID)
-			if err != nil {
-				log.Error().Err(err).Msg("SELECT w_id FROM words WHERE word=token err")
-			}
-			words[token] = wID
 		}
 
-		_, err = db.Exec(`INSERT INTO positions (w_id, f_id, position) VALUES ($1, $2, $3)`, words[token], fID, wordPosition)
-		if err != nil {
-			log.Error().Err(err).Msg("Execute insert data in table positions err")
+		if err := model.InsertRow(db, "positions", []string{"w_id", "f_id", "position"}, []string{strconv.Itoa(words[token]), strconv.Itoa(fID), strconv.Itoa(wordPosition)}); err != nil {
+			return err
 		}
-
 		wordPosition++
 	}
-	mu.Unlock()
+	log.Info().Str("File", fileName).Msg("File is indexed")
+	return nil
+}
+
+func readDir(path string) ([]fileData, error) {
+	files, err := ioutil.ReadDir(path)
+	if err != nil {
+		return nil, err
+	}
+
+	files = deleteDirs(files)
+
+	ch := make(chan fileData)
+	defer close(ch)
+	errCh := make(chan error)
+	defer close(errCh)
+	for _, file := range files {
+		go readFile(path, file.Name(), ch, errCh)
+	}
+	var filesData []fileData
+	for i := 0; i != len(files); {
+		select {
+		case err = <-errCh:
+			return nil, err
+		case file := <-ch:
+			filesData = append(filesData, file)
+			i++
+		}
+	}
+	return filesData, nil
 }
 
 // IndexingFolderDB save reverse index in db
 func IndexingFolderDB(db *sql.DB, path string) error {
-	ch := make(chan fileData)
-	errCh := make(chan error)
-	defer close(ch)
-	defer close(errCh)
-
-	countFiles, err := readDirInChan(path, ch, errCh)
+	files, err := readDir(path)
 	if err != nil {
 		return err
 	}
 
-	mu := &sync.Mutex{}
-	wg := &sync.WaitGroup{}
-
-	for i := 0; i != countFiles; {
-		select {
-		case file := <-ch:
-			wg.Add(1)
-			go addFileInDB(db, file.name, string(file.text), mu, wg)
-			i++
-		case err := <-errCh:
+	for _, file := range files {
+		if err := addFileInDB(db, file.name, string(file.text)); err != nil {
 			return err
 		}
 	}
-	wg.Wait()
 	return nil
 }
 
@@ -251,18 +245,6 @@ func HasFileInIndex(sliceIndex []WordIndex, fileName string) int {
 		}
 	}
 	return -1
-}
-
-func deleteDirs(files []os.FileInfo) []os.FileInfo {
-	i := 0
-	for _, file := range files {
-		if !file.IsDir() {
-			files[i] = file
-			i++
-		}
-	}
-	files = files[:i]
-	return files
 }
 
 // searching
@@ -321,87 +303,6 @@ func (index ReverseIndex) Searching(searchPhrase string) ([]string, error) {
 	searchResult := handleResults(results, keywords)
 
 	return searchResult, nil
-}
-
-func counterUniqueKeywords(results map[string]searchResult, keywords []string) {
-	for i, result := range results {
-		for _, keyword := range keywords {
-			for _, Word := range result.words {
-				if Word.word == keyword {
-					result.uniqueKeywords++
-					break
-				}
-			}
-		}
-		results[i] = result
-	}
-}
-
-func sortPositions(results map[string]searchResult) {
-	for file, result := range results {
-		sort.Slice(result.words, func(i, j int) bool { return result.words[i].position < result.words[j].position })
-		results[file] = result
-	}
-}
-
-func maxLengthSearchPhrase(words []wordOnFile, keywords []string) int {
-	startKeywordPhrasePositon := 0
-	length := 0
-	maxLength := 1
-	prevPosition := words[0].position - 1
-	for _, wordData := range words {
-		if startKeywordPhrasePositon+length >= len(keywords) {
-			return maxLength
-		}
-		if wordData.word == keywords[startKeywordPhrasePositon+length] && wordData.position-1 == prevPosition {
-			length++
-			if length > maxLength {
-				maxLength = length
-			}
-			if length == len(keywords) {
-				return maxLength
-			}
-		} else {
-			length = 0
-			for i, keyword := range keywords {
-				if wordData.word == keyword {
-					length = 1
-					startKeywordPhrasePositon = i
-					break
-				}
-			}
-		}
-		prevPosition = wordData.position
-	}
-	return maxLength
-}
-
-func sortSearchResults(sliceResults []searchResult) {
-	sort.Slice(sliceResults, func(i, j int) bool {
-		if sliceResults[i].maxLengthPhrase > sliceResults[j].maxLengthPhrase {
-			return true
-		}
-		if sliceResults[i].maxLengthPhrase == sliceResults[j].maxLengthPhrase && sliceResults[i].uniqueKeywords > sliceResults[j].uniqueKeywords {
-			return true
-		}
-		if sliceResults[i].maxLengthPhrase == sliceResults[j].maxLengthPhrase && sliceResults[i].uniqueKeywords == sliceResults[j].uniqueKeywords && sliceResults[i].count > sliceResults[j].count {
-			return true
-		}
-		return false
-	})
-}
-
-func convertMapToSlice(mapResults map[string]searchResult) []searchResult {
-	sliceResults := []searchResult{}
-	for file, result := range mapResults {
-		sliceResults = append(sliceResults, searchResult{
-			file:            file,
-			count:           result.count,
-			uniqueKeywords:  result.uniqueKeywords,
-			maxLengthPhrase: result.maxLengthPhrase,
-		})
-	}
-	return sliceResults
 }
 
 // SearchingDB is func for search with reverse index
@@ -494,4 +395,85 @@ func handleResults(results map[string]searchResult, keywords []string) []string 
 	}
 
 	return searchResult
+}
+
+func counterUniqueKeywords(results map[string]searchResult, keywords []string) {
+	for i, result := range results {
+		for _, keyword := range keywords {
+			for _, Word := range result.words {
+				if Word.word == keyword {
+					result.uniqueKeywords++
+					break
+				}
+			}
+		}
+		results[i] = result
+	}
+}
+
+func sortPositions(results map[string]searchResult) {
+	for file, result := range results {
+		sort.Slice(result.words, func(i, j int) bool { return result.words[i].position < result.words[j].position })
+		results[file] = result
+	}
+}
+
+func maxLengthSearchPhrase(words []wordOnFile, keywords []string) int {
+	startKeywordPhrasePositon := 0
+	length := 0
+	maxLength := 1
+	prevPosition := words[0].position - 1
+	for _, wordData := range words {
+		if startKeywordPhrasePositon+length >= len(keywords) {
+			return maxLength
+		}
+		if wordData.word == keywords[startKeywordPhrasePositon+length] && wordData.position-1 == prevPosition {
+			length++
+			if length > maxLength {
+				maxLength = length
+			}
+			if length == len(keywords) {
+				return maxLength
+			}
+		} else {
+			length = 0
+			for i, keyword := range keywords {
+				if wordData.word == keyword {
+					length = 1
+					startKeywordPhrasePositon = i
+					break
+				}
+			}
+		}
+		prevPosition = wordData.position
+	}
+	return maxLength
+}
+
+func convertMapToSlice(mapResults map[string]searchResult) []searchResult {
+	sliceResults := []searchResult{}
+	for file, result := range mapResults {
+		sliceResults = append(sliceResults, searchResult{
+			file:            file,
+			count:           result.count,
+			uniqueKeywords:  result.uniqueKeywords,
+			maxLengthPhrase: result.maxLengthPhrase,
+		})
+	}
+	return sliceResults
+}
+
+func sortSearchResults(sliceResults []searchResult) {
+	sort.Slice(sliceResults, func(i, j int) bool {
+		if sliceResults[i].maxLengthPhrase > sliceResults[j].maxLengthPhrase {
+			return true
+		}
+		if sliceResults[i].maxLengthPhrase == sliceResults[j].maxLengthPhrase && sliceResults[i].uniqueKeywords > sliceResults[j].uniqueKeywords {
+			return true
+		}
+		if sliceResults[i].maxLengthPhrase == sliceResults[j].maxLengthPhrase && sliceResults[i].uniqueKeywords == sliceResults[j].uniqueKeywords && sliceResults[i].count > sliceResults[j].count {
+			return true
+		}
+		return false
+	})
 }
