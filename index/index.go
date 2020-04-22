@@ -176,7 +176,11 @@ func addFileInDB(db *sql.DB, fileName string, fileText string) error {
 
 	tokens := HandleWords(strings.Fields(string(fileText)))
 	wordPosition := 0
-	words := make(map[string]int)
+
+	words, err := model.DownloadTable(db, "words")
+	if err != nil {
+		return err
+	}
 
 	var buffer [][]string
 	for _, token := range tokens {

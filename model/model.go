@@ -77,3 +77,28 @@ func Insert(db *sql.DB, table string, columns []string, valsSlice [][]string) er
 	}
 	return nil
 }
+
+// DownloadTable - download 2 column table into map
+func DownloadTable(db *sql.DB, table string) (map[string]int, error) {
+	query := fmt.Sprintf("SELECT * FROM %s", table)
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make(map[string]int)
+	for rows.Next() {
+		var id int
+		var value string
+		err = rows.Scan(&id, &value)
+		if err != nil {
+			return nil, err
+		}
+		result[value] = id
+	}
+	err = rows.Err()
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
