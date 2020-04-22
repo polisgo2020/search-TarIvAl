@@ -324,30 +324,27 @@ func SearchingDB(db *sql.DB, searchPhrase string) ([]string, error) {
 			continue
 		case nil:
 		default:
-			log.Error().Err(err).Msg("SELECT w_id FROM words WHERE word=keyword err")
+			return nil, err
 		}
 
 		rows, err := db.Query("SELECT f_id, position FROM positions WHERE w_id=$1", wID)
 		if err != nil {
-			log.Error().Err(err).Msg("SELECT f_id, position FROM positions WHERE w_id=wID err")
+			return nil, err
 		}
 		defer rows.Close()
 		for rows.Next() {
 			var fID, position int
 			err = rows.Scan(&fID, &position)
 			if err != nil {
-				log.Error().Err(err).Msg("Rows scan err")
+				return nil, err
 			}
 
 			if file, ok := files[fID]; !ok {
-				switch err := db.QueryRow(`SELECT file FROM files WHERE f_id=$1`, fID).Scan(&file); err {
-				case sql.ErrNoRows:
-					log.Error().Err(sql.ErrNoRows).Msg("SELECT file FROM files WHERE f_id=fID err")
-				case nil:
-					files[fID] = file
-				default:
-					log.Error().Err(err).Msg("SELECT file FROM files WHERE f_id=fID err")
+				err := db.QueryRow(`SELECT name_file FROM files WHERE f_id=$1`, fID).Scan(&file)
+				if err != nil {
+					return nil, err
 				}
+				files[fID] = file
 			}
 
 			word := wordOnFile{
