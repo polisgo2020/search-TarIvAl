@@ -1,7 +1,6 @@
 package index
 
 import (
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"io/ioutil"
@@ -12,8 +11,8 @@ import (
 	"sync"
 	"unicode"
 
+	"github.com/go-pg/pg/v9"
 	"github.com/kljensen/snowball/english"
-	_ "github.com/lib/pq"
 	"github.com/polisgo2020/search-tarival/model"
 	"github.com/rs/zerolog/log"
 	"github.com/zoomio/stopwords"
@@ -161,39 +160,49 @@ func IndexingFolder(path string) (ReverseIndex, error) {
 	return index, nil
 }
 
-func addFileInDB(db *sql.DB, fileName string, fileText string) error {
-	var fID int
+func addFileInDB(db *pg.DB, fileName string, fileText string) error {
+	file := model.File{
+		File: fileName,
+	}
 
-	fID, ok, err := model.CheckAndInsert(db, "files", "name_file", "f_id", fileName)
+	ok, err := file.CheckAndInsert(db)
 	if err != nil {
 		return err
 	}
-	if ok {
-		if err = model.Delete(db, "positions", "f_id", strconv.Itoa(fID)); err != nil {
+	if !ok {
+		if err = model.Delete(db, "positions", "f_id", strconv.Itoa(file.Id)); err != nil {
 			return err
 		}
 	}
 
 	tokens := HandleWords(strings.Fields(string(fileText)))
-	wordPosition := 0
+	wordPosition := 1
 
-	words, err := model.DownloadTable(db, "words")
+	words, err := model.SelectWords(db)
 	if err != nil {
 		return err
 	}
 
-	var buffer [][]string
+	var buffer []model.Position
 	for _, token := range tokens {
 		if _, ok := words[token]; !ok {
-			words[token], _, err = model.CheckAndInsert(db, "words", "word", "w_id", token)
+			word := model.Word{
+				Word: token,
+			}
+			_, err = word.CheckAndInsert(db)
 			if err != nil {
 				return err
 			}
+			words[word.Word] = word.Id
 		}
-		buffer = append(buffer, []string{strconv.Itoa(words[token]), strconv.Itoa(fID), strconv.Itoa(wordPosition)})
+		buffer = append(buffer, model.Position{
+			Wid:      words[token],
+			Fid:      file.Id,
+			Position: wordPosition,
+		})
 		wordPosition++
 	}
-	if err := model.Insert(db, "positions", []string{"w_id", "f_id", "position"}, buffer); err != nil {
+	if err := model.Insert(db, buffer); err != nil {
 		return err
 	}
 	log.Info().Str("File", fileName).Msg("File is indexed")
@@ -229,7 +238,7 @@ func readDir(path string) ([]fileData, error) {
 }
 
 // IndexingFolderDB save reverse index in db
-func IndexingFolderDB(db *sql.DB, path string) error {
+func IndexingFolderDB(db *pg.DB, path string) error {
 	files, err := readDir(path)
 	if err != nil {
 		return err
@@ -312,7 +321,7 @@ func (index ReverseIndex) Searching(searchPhrase string) ([]string, error) {
 }
 
 // SearchingDB is func for search with reverse index
-func SearchingDB(db *sql.DB, searchPhrase string) ([]string, error) {
+func SearchingDB(db *pg.DB, searchPhrase string) ([]string, error) {
 	keywords := strings.Fields(searchPhrase)
 	keywords = HandleWords(keywords)
 
@@ -321,54 +330,46 @@ func SearchingDB(db *sql.DB, searchPhrase string) ([]string, error) {
 	}
 
 	results := map[string]searchResult{}
-	files := make(map[int]string)
+	files, err := model.SelectFiles(db)
+	if err != nil {
+		return nil, err
+	}
 
 	for _, keyword := range keywords {
-		var wID int
-		switch err := db.QueryRow(`SELECT w_id FROM words WHERE word=$1`, keyword).Scan(&wID); err {
-		case sql.ErrNoRows:
-			continue
+		word := model.Word{
+			Word: keyword,
+		}
+		switch err := word.SelectRow(db); err {
 		case nil:
 		default:
-			return nil, err
+			if err.Error() == "pg: no rows in result set" {
+				continue
+			} else {
+				return nil, err
+			}
 		}
 
-		rows, err := db.Query("SELECT f_id, position FROM positions WHERE w_id=$1", wID)
+		positions, err := model.SelectPositions(db, word.Id)
 		if err != nil {
 			return nil, err
 		}
-		defer rows.Close()
-		for rows.Next() {
-			var fID, position int
-			err = rows.Scan(&fID, &position)
-			if err != nil {
-				return nil, err
-			}
-
-			if file, ok := files[fID]; !ok {
-				err := db.QueryRow(`SELECT name_file FROM files WHERE f_id=$1`, fID).Scan(&file)
-				if err != nil {
-					return nil, err
-				}
-				files[fID] = file
-			}
-
+		for _, position := range positions {
 			word := wordOnFile{
 				word:     keyword,
-				position: position,
+				position: position.Position,
 			}
 
-			if _, ok := results[files[fID]]; !ok {
-				results[files[fID]] = searchResult{
+			if _, ok := results[files[position.Fid]]; !ok {
+				results[files[position.Fid]] = searchResult{
 					count:          1,
 					uniqueKeywords: 0,
 					words:          []wordOnFile{word},
 				}
 			} else {
-				result := results[files[fID]]
+				result := results[files[position.Fid]]
 				result.count++
 				result.words = append(result.words, word)
-				results[files[fID]] = result
+				results[files[position.Fid]] = result
 			}
 		}
 	}

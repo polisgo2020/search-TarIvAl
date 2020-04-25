@@ -1,13 +1,13 @@
 package main
 
 import (
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"io/ioutil"
 	"os"
 	"time"
 
+	"github.com/go-pg/pg/v9"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
@@ -130,20 +130,14 @@ func indexJSON(c *cli.Context) error {
 func indexDB(c *cli.Context) error {
 	folder := c.String("path")
 
-	db, err := sql.Open("postgres", cfg.PgSQL)
+	pgOpt, err := pg.ParseURL(cfg.PgSQL)
 	if err != nil {
 		log.Fatal().
 			Err(err).
 			Msg("")
 	}
+	db := pg.Connect(pgOpt)
 	defer db.Close()
-
-	err = db.Ping()
-	if err != nil {
-		log.Fatal().
-			Err(err).
-			Msg("")
-	}
 
 	if err = index.IndexingFolderDB(db, folder); err != nil {
 		log.Fatal().
@@ -178,20 +172,14 @@ func searchJSON(c *cli.Context) error {
 
 func searchDB(c *cli.Context) error {
 
-	db, err := sql.Open("postgres", cfg.PgSQL)
+	pgOpt, err := pg.ParseURL(cfg.PgSQL)
 	if err != nil {
 		log.Fatal().
 			Err(err).
 			Msg("")
 	}
+	db := pg.Connect(pgOpt)
 	defer db.Close()
-
-	err = db.Ping()
-	if err != nil {
-		log.Fatal().
-			Err(err).
-			Msg("")
-	}
 
 	handle := web.HandleObject{
 		DB: db,

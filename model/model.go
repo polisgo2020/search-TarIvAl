@@ -1,104 +1,101 @@
 package model
 
 import (
-	"database/sql"
-	"errors"
 	"fmt"
 
+	"github.com/go-pg/pg/v9"
 	_ "github.com/lib/pq"
 )
 
+type Word struct {
+	Id   int    `pg:"w_id,pk"`
+	Word string `pg:"word"`
+}
+
+type File struct {
+	Id   int    `pg:"f_id,pk"`
+	File string `pg:"name_file"`
+}
+
+type Position struct {
+	Wid      int    `pg:"w_id,pk"`
+	Fid      int    `pg:"f_id,pk"`
+	Position int `pg:"position"`
+}
+
 // Delete - delete from table where value column = val
-func Delete(db *sql.DB, table, column, val string) error {
-	query := fmt.Sprintf(`DELETE FROM %s WHERE %s = %s`, table, column, val)
-	_, err := db.Exec(query)
+func Delete(db *pg.DB, table, column, val string) error {
+	query := fmt.Sprintf(`DELETE FROM %s WHERE %s = ?`, table, column)
+	_, err := db.Exec(query, val)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-// CheckAndInsert - check val in table columnData, insert val in columnData if columnData havn't val.
-// Return val id, had val in columnData before func and err if it has
-func CheckAndInsert(db *sql.DB, table, columnData, columnID, val string) (int, bool, error) {
-	var id int
-	var err error
-	querySelect := fmt.Sprintf(`SELECT %s FROM %s WHERE %s = '%s'`, columnID, table, columnData, val)
-	switch err = db.QueryRow(querySelect).Scan(&id); err {
-	case sql.ErrNoRows:
-		queryInsert := fmt.Sprintf(`INSERT INTO %s (%s) VALUES ('%s')`, table, columnData, val)
-		_, err = db.Exec(queryInsert)
-		if err != nil {
-			return 0, false, err
-		}
-		err = db.QueryRow(querySelect).Scan(&id)
-		if err != nil {
-			return 0, false, err
-		}
-		return id, false, nil
-	case nil:
-		return id, true, nil
-	default:
-		fmt.Println(err, id, columnID, table, columnData, val)
-		return 0, false, err
+func (w *Word) CheckAndInsert(db *pg.DB) (bool, error) {
+	ok, err := db.Model(w).
+		Where("word = ?", w.Word).
+		SelectOrInsert()
+	if err != nil {
+		return ok, err
 	}
+	return ok, nil
+}
+
+func (f *File) CheckAndInsert(db *pg.DB) (bool, error) {
+	ok, err := db.Model(f).
+		Where("name_file = ?", f.File).
+		SelectOrInsert()
+	if err != nil {
+		return ok, err
+	}
+	return ok, nil
 }
 
 // Insert - insert in table valsSlice values to columns
-func Insert(db *sql.DB, table string, columns []string, valsSlice [][]string) error {
-	var columnsStr string
-	for i, column := range columns {
-		if i != 0 {
-			columnsStr += ", "
-		}
-		columnsStr += column
-	}
-	var inputValues string
-	for j, vals := range valsSlice {
-		if len(vals) != len(columns) {
-			return errors.New("length columns and values not equal")
-		}
-		if j != 0 {
-			inputValues += ", "
-		}
-		inputValues += "("
-		for i, val := range vals {
-			if i != 0 {
-				inputValues += ", "
-			}
-			inputValues += val
-		}
-		inputValues += ")"
-	}
-	query := fmt.Sprintf(`INSERT INTO %s (%s) VALUES %s`, table, columnsStr, inputValues)
-	_, err := db.Exec(query)
+func Insert(db *pg.DB, buffer []Position) error {
+	err := db.Insert(&buffer)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-// DownloadTable - download 2 column table into map
-func DownloadTable(db *sql.DB, table string) (map[string]int, error) {
-	query := fmt.Sprintf("SELECT * FROM %s", table)
-	rows, err := db.Query(query)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
+func SelectWords(db *pg.DB) (map[string]int, error) {
 	result := make(map[string]int)
-	for rows.Next() {
-		var id int
-		var value string
-		err = rows.Scan(&id, &value)
-		if err != nil {
-			return nil, err
-		}
-		result[value] = id
-	}
-	err = rows.Err()
+	var words []Word
+	err := db.Model(&words).Select()
 	if err != nil {
 		return nil, err
+	}
+	for _, word := range words {
+		result[word.Word] = word.Id
 	}
 	return result, nil
+}
+
+func SelectFiles(db *pg.DB) (map[int]string, error) {
+	result := make(map[int]string)
+	var files []File
+	err := db.Model(&files).Select()
+	if err != nil {
+		return nil, err
+	}
+	for _, file := range files {
+		result[file.Id] = file.File
+	}
+	return result, nil
+}
+
+func (w *Word) SelectRow(db *pg.DB) error {
+	return db.Model(w).Where("word = ?", w.Word).Select()
+}
+
+func SelectPositions(db *pg.DB, w_id int) ([]Position, error) {
+	var positions []Position
+	if err := db.Model(&positions).Where("w_id = ?", w_id).Select(); err != nil {
+		return nil, err
+	}
+	return positions, nil
 }

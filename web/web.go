@@ -1,13 +1,13 @@
 package web
 
 import (
-	"database/sql"
 	"fmt"
 	"html"
 	"net/http"
 	"text/template"
 	"time"
 
+	"github.com/go-pg/pg/v9"
 	"github.com/rs/zerolog/log"
 
 	"github.com/polisgo2020/search-tarival/index"
@@ -16,7 +16,7 @@ import (
 // HandleObject object for send index or db in ServerStart
 type HandleObject struct {
 	Index index.ReverseIndex
-	DB    *sql.DB
+	DB    *pg.DB
 }
 
 // ServerStart is start the server at handle address, handle functions and index params
