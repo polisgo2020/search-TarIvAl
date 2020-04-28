@@ -7,47 +7,55 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/go-pg/pg/v9"
 	"github.com/rs/zerolog/log"
 
 	"github.com/polisgo2020/search-tarival/index"
 )
 
-// HandleObject is parameter for ServerStart
+// HandleObject object for send index or db in ServerStart
 type HandleObject struct {
-	Address   string
-	Tmp       string
-	WithIndex bool
-	Index     index.ReverseIndex
+	Index index.ReverseIndex
+	DB    *pg.DB
 }
 
-// ServerStart is start the server at handleObjs addresses, handle functions and index params
-func ServerStart(listen string, timeout time.Duration, handleObjs []HandleObject) error {
+type handler struct {
+	tmpIndex  *template.Template
+	tmpResult *template.Template
+	data      HandleObject
+}
+
+// ServerStart is start the server at handle address, handle functions and index params
+func ServerStart(listen string, timeout time.Duration, handle HandleObject) error {
 	mux := http.NewServeMux()
 
-	handler := logMiddleware(mux)
+	mw := logMiddleware(mux)
 
 	server := http.Server{
 		Addr:         listen,
-		Handler:      handler,
+		Handler:      mw,
 		ReadTimeout:  timeout,
 		WriteTimeout: timeout,
 	}
 
-	for _, handle := range handleObjs {
-		tmp, err := template.ParseFiles(handle.Tmp)
-		if err != nil {
-			return err
-		}
-		if handle.WithIndex {
-			mux.HandleFunc(handle.Address, func(w http.ResponseWriter, r *http.Request) {
-				handleResult(w, r, tmp, handle.Index)
-			})
-		} else {
-			mux.HandleFunc(handle.Address, func(w http.ResponseWriter, r *http.Request) {
-				handleSearch(w, r, tmp)
-			})
-		}
+	tmpIndex, err := template.ParseFiles("web/templates/index.html")
+	if err != nil {
+		return err
 	}
+
+	tmpResult, err := template.ParseFiles("web/templates/result.html")
+	if err != nil {
+		return err
+	}
+
+	h := handler{
+		tmpIndex:  tmpIndex,
+		tmpResult: tmpResult,
+		data:      handle,
+	}
+
+	mux.HandleFunc("/", h.handleSearch)
+	mux.HandleFunc("/result", h.handleResult)
 
 	log.Info().
 		Str("Interface", listen).
@@ -56,7 +64,7 @@ func ServerStart(listen string, timeout time.Duration, handleObjs []HandleObject
 	return server.ListenAndServe()
 }
 
-func handleResult(w http.ResponseWriter, r *http.Request, tmp *template.Template, Index index.ReverseIndex) {
+func (handle handler) handleResult(w http.ResponseWriter, r *http.Request) {
 	query := html.EscapeString(r.FormValue("query"))
 
 	log.Info().Str("Get search phrase", query).Msg("Get query")
@@ -71,10 +79,17 @@ func handleResult(w http.ResponseWriter, r *http.Request, tmp *template.Template
 		Query:   query,
 	}
 
-	searchResult, err := Index.Searching(query)
+	var err error
+	var searchResult []string
+	if handle.data.Index != nil {
+		searchResult, err = handle.data.Index.Searching(query)
+	}
+	if handle.data.DB != nil {
+		searchResult, err = index.SearchingDB(handle.data.DB, query)
+	}
 	if err != nil {
 		log.Error().Err(err).Msg("Searching err")
-		err = tmp.Execute(w, tmpData)
+		err = handle.tmpResult.Execute(w, tmpData)
 		if err != nil {
 			log.Error().Err(err).Msg("Execute html template err")
 		}
@@ -91,17 +106,17 @@ func handleResult(w http.ResponseWriter, r *http.Request, tmp *template.Template
 
 	tmpData.Results = results
 
-	err = tmp.Execute(w, tmpData)
+	err = handle.tmpResult.Execute(w, tmpData)
 	if err != nil {
 		log.Error().Err(err).Msg("Execute html template err")
 	}
 }
 
-func handleSearch(w http.ResponseWriter, r *http.Request, tmp *template.Template) {
+func (handle handler) handleSearch(w http.ResponseWriter, r *http.Request) {
 	query := html.EscapeString(r.FormValue("query"))
 
 	if len(query) == 0 {
-		err := tmp.Execute(w, struct{}{})
+		err := handle.tmpIndex.Execute(w, struct{}{})
 		if err != nil {
 			log.Error().Err(err).Msg("Execute html template err")
 			return
